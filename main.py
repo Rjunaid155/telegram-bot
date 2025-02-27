@@ -2,7 +2,7 @@ import telebot
 import os  
 
 # Token ko environment variable se sahi tareeke se lena
-TOKEN = os.getenv(8094066627:AAFvUUyhSivGyp6yphOkhTbj6gjJGzFS73U)
+TOKEN = os.getenv("8094066627:AAFvUUyhSivGyp6yphOkhTbj6gjJGzFS73U")
 
 # Token check karne ke liye
 if not TOKEN:
