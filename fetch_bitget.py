@@ -6,9 +6,9 @@ import hashlib
 import base64
 
 # ✅ Bitget API keys (Render ke environment variables se)
-API_KEY = os.getenv("BG_API_KEY")
-SECRET_KEY = os.getenv("BG_SECRET_KEY")
-PASSPHRASE = os.getenv("BG_PASSPHRASE")  
+API_KEY = os.getenv("BITGET_API_KEY")
+SECRET_KEY = os.getenv("BITGET_SECRET_KEY")
+PASSPHRASE = os.getenv("BITGET_PASSPHRASE")  
 
 # ✅ Bitget API ka base URL
 BASE_URL = "https://api.bitget.com"
