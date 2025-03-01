@@ -44,4 +44,4 @@ def fetch_order_book(symbol="BTCUSDT"):
 if _name_ == "_main_":
     order_book = fetch_order_book("BTCUSDT")
     if order_book:
-        print("Order Book Data:", order_book
+        print("Order Book Data:", order_book)
