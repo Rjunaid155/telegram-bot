@@ -10,7 +10,7 @@ API_KEY = os.getenv(bg_ba1f5af3d37b7e78f859fab0fd506920)
 SECRET_KEY = os.getenv(69115b5edde54773da5805ab6714d88771151e537333f1d587d861a628039c7a)
 
 # Bitget API ka base URL
-BASE_URL = "https://api.bitget.com/api/v1/"
+BASE_url = "https://api.bitget.com/api/v2/public/time"
 
 # Function to generate signature
 def generate_signature(timestamp, method, request_path, body=''):
