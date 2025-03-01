@@ -59,5 +59,5 @@ def check_and_alert():
                 send_telegram_alert(alert_msg)
 
 # ✅ Run the function
-if _name_ == "_main_":
+if __name__ == "__main__":
     check_and_alert()
