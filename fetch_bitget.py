@@ -41,6 +41,7 @@ import telebot
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+TELEGRAM_TOKEN = os.getenv("TOKEN")
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
 def send_telegram_alert(message):
