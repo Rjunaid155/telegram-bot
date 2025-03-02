@@ -5,7 +5,7 @@ import hmac
 import hashlib
 import base64
 import telebot
-import pandas as pd
+
 import numpy as np
 
 # ✅ Environment Variables
