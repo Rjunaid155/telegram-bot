@@ -5,107 +5,117 @@ import hmac
 import hashlib
 import base64
 import telebot
+import pandas as pd
+import numpy as np
 
-# 🔑 Bitget API Keys (Render ke environment variables se le raha hai)
+# ✅ Environment Variables
 API_KEY = os.getenv("BITGET_API_KEY")
 SECRET_KEY = os.getenv("BITGET_SECRET_KEY")
-PASSPHRASE = os.getenv("BITGET_PASSPHRASE")  # Futures trading ke liye zaroori hai
+PASSPHRASE = os.getenv("BITGET_PASSPHRASE")
 TELEGRAM_TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
-# 🛠️ Signature generation function
+# ✅ Signature Generation
 def generate_signature(timestamp, method, request_path, body=""):
     message = f"{timestamp}{method}{request_path}{body}"
     signature = hmac.new(SECRET_KEY.encode(), message.encode(), hashlib.sha256).digest()
     return base64.b64encode(signature).decode()
 
-# 📊 Function to fetch order book (Spot & Futures)
-def fetch_order_book(market_type, symbol, limit=5):
-    if market_type == "spot":
-        base_url = "https://api.bitget.com/api/spot/v1/market/depth"
-        symbol = f"{symbol}_SPBL"  # ✅ Spot ke liye symbol format
-    elif market_type == "futures":
-        base_url = "https://api.bitget.com/api/mix/v1/market/depth"
-        symbol = f"{symbol}_UMCBL"  # ✅ Futures (USDT-M Perpetual) ke liye symbol format
+# ✅ Fetch Kline (candlestick) data
+def fetch_klines(symbol, interval="15min", limit=100):
+    url = "https://api.bitget.com/api/mix/v1/market/candles"
+    params = {
+        "symbol": f"{symbol}_UMCBL",
+        "granularity": interval,
+        "limit": limit
+    }
+    response = requests.get(url, params=params)
+    if response.status_code == 200:
+        return response.json()["data"]
     else:
+        print("Error fetching klines:", response.text)
         return None
 
-    params = {"symbol": symbol, "limit": limit}
-    response = requests.get(base_url, params=params)
+# ✅ Calculate RSI
+def calculate_rsi(prices, period=14):
+    delta = np.diff(prices)
+    gains = np.maximum(delta, 0)
+    losses = np.abs(np.minimum(delta, 0))
+    
+    avg_gain = np.convolve(gains, np.ones(period)/period, mode='valid')
+    avg_loss = np.convolve(losses, np.ones(period)/period, mode='valid')
+    
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    
+    return rsi[-1] if len(rsi) > 0 else None
 
-    if response.status_code == 200:
-        return response.json()
-    else:
-        print(f"Error fetching {market_type} order book:", response.text)
-        return None
+# ✅ Calculate Moving Average (MA)
+def calculate_ma(prices, period=14):
+    ma = pd.Series(prices).rolling(window=period).mean()
+    return ma.iloc[-1]
 
-# 🔍 Function to get all trading pairs
-def get_all_trading_pairs(market_type):
-    if market_type == "spot":
-        url = "https://api.bitget.com/api/spot/v1/public/symbols"
-    elif market_type == "futures":
-        url = "https://api.bitget.com/api/mix/v1/market/contracts?productType=umcbl"
-    else:
-        return []
+# ✅ Calculate MACD
+def calculate_macd(prices, short_period=12, long_period=26, signal_period=9):
+    short_ema = pd.Series(prices).ewm(span=short_period).mean()
+    long_ema = pd.Series(prices).ewm(span=long_period).mean()
+    macd = short_ema - long_ema
+    signal_line = macd.ewm(span=signal_period).mean()
+    return macd.iloc[-1], signal_line.iloc[-1]
 
-    response = requests.get(url)
-    if response.status_code == 200:
-        data = response.json()
-        if market_type == "spot":
-            return [pair["symbol"].replace("_SPBL", "") for pair in data["data"]]
-        else:
-            return [pair["symbol"].replace("_UMCBL", "") for pair in data["data"]]
-    else:
-        print(f"Error fetching {market_type} trading pairs:", response.text)
-        return []
-
-# 🔔 Send alerts to Telegram
+# ✅ Send Telegram Alert
 def send_telegram_alert(message):
     bot.send_message(CHAT_ID, message)
 
-# ⚡ Spike Trading Alert Function
-def check_spike_trading(symbol, market, current_price, prev_price):
-    price_change = ((current_price - prev_price) / prev_price) * 100
+# ✅ Generate Trade Signal
+def generate_signals(symbol):
+    klines = fetch_klines(symbol)
+    if not klines:
+        return
 
-    if price_change >= 2:  # 🟢 2% ya zyada bullish spike
-        alert_msg = f"🚀 {symbol} ({market.upper()}) Spike Alert: +{round(price_change, 2)}% Bullish Move!"
-        send_telegram_alert(alert_msg)
-    elif price_change <= -2:  # 🔴 2% ya zyada bearish spike
-        alert_msg = f"⚠️ {symbol} ({market.upper()}) Spike Alert: {round(price_change, 2)}% Bearish Move!"
-        send_telegram_alert(alert_msg)
+    prices = [float(candle[4]) for candle in klines]  # Closing prices
+    current_price = prices[-1]
 
-# 🚀 Fetch & Send Alerts
-def check_and_alert():
-    spot_pairs = get_all_trading_pairs("spot")
-    futures_pairs = get_all_trading_pairs("futures")
+    rsi = calculate_rsi(prices)
+    ma = calculate_ma(prices)
+    macd, signal_line = calculate_macd(prices)
 
-    previous_prices = {}  # 📌 Store previous prices for spike alerts
+    if rsi and ma and macd and signal_line:
+        if rsi < 30 and macd > signal_line and current_price > ma:  # ✅ Strong Buy Signal
+            entry = round(current_price, 4)
+            sl = round(entry * 0.98, 4)
+            tp = round(entry * 1.02, 4)
+            message = (f"🚀 Strong Buy Signal Detected\n"
+                       f"📈 Symbol: {symbol}\n"
+                       f"💲 Entry Price: {entry}\n"
+                       f"🔻 Stop Loss: {sl}\n"
+                       f"🔺 Take Profit: {tp}\n"
+                       f"📊 RSI: {round(rsi, 2)}\n"
+                       f"📈 MACD: {round(macd, 2)}\n")
+            send_telegram_alert(message)
 
-    for symbol in spot_pairs + futures_pairs:
-        market = "spot" if symbol in spot_pairs else "futures"
-        data = fetch_order_book(market, symbol)
+        elif rsi > 70 and macd < signal_line and current_price < ma:  # ✅ Strong Sell Signal
+            entry = round(current_price, 4)
+            sl = round(entry * 1.02, 4)
+            tp = round(entry * 0.98, 4)
+            message = (f"⚠️ Strong Sell Signal Detected\n"
+                       f"📉 Symbol: {symbol}\n"
+                       f"💲 Entry Price: {entry}\n"
+                       f"🔻 Stop Loss: {sl}\n"
+                       f"🔺 Take Profit: {tp}\n"
+                       f"📊 RSI: {round(rsi, 2)}\n"
+                       f"📈 MACD: {round(macd, 2)}\n")
+            send_telegram_alert(message)
 
-        if data:
-            best_bid = float(data["data"]["bids"][0][0])  # ✅ Best buy price
-            stop_loss = round(best_bid * 0.98, 4)  # 🔻 2% Neeche Stop Loss
-            take_profit = round(best_bid * 1.02, 4)  # 🔺 2% Upar Take Profit
-            
-            alert_msg = (
-                f"🔥 {symbol} ({market.upper()}) Trading Signal:\n"
-                f"📌 Entry Price: {best_bid}\n"
-                f"📉 Stop Loss: {stop_loss}\n"
-                f"📈 Take Profit: {take_profit}"
-            )
-            send_telegram_alert(alert_msg)
+# ✅ Main Function (15-min checks)
+def main():
+    symbols = ["BTCUSDT", "ETHUSDT", "XRPUSDT", "DOGEUSDT"]  # Aap yahan apne favourite pairs add kar sakte hain
+    while True:
+        for symbol in symbols:
+            generate_signals(symbol)
+        time.sleep(900)  # 15-minute interval (900 seconds)
 
-            # 📊 Spike Trading Alert Check
-            if symbol in previous_prices:
-                check_spike_trading(symbol, market, best_bid, previous_prices[symbol])
-            
-            previous_prices[symbol] = best_bid  # 🔄 Update previous price
-
-# ✅ Run the function
 if __name__ == "__main__":
-    check_and_alert()
+    main()
