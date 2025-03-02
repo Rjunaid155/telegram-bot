@@ -107,5 +107,5 @@ def check_and_alert():
             previous_prices[symbol] = best_bid  # 🔄 Update previous price
 
 # ✅ Run the function
-if _name_ == "_main_":
+if __name__ == "__main__":
     check_and_alert()
