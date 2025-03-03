@@ -22,14 +22,29 @@ import time
 # Bitget API endpoint for fetching candles
 url = "https://api.bitget.com/api/mix/v1/market/candles"
 
-# Test with a single trading pair (adjust as needed)
+# Get current time in milliseconds
+current_time = int(time.time() * 1000)
+one_hour_ago = current_time - (60 * 60 * 1000)  # 1 hour ago in milliseconds
+
+# Request parameters
 params = {
-    "symbol": "BTCUSDT_UMCBL",  # Replace with any valid symbol
+    "symbol": "BTCUSDT_UMCBL",  # Ensure the symbol is correct
     "granularity": "300",        # 5-minute candles (300 seconds)
-    "limit": "100",               # Number of candles
-    "startTime": str(int(time.time() * 1000) - 3600000),  # 1 hour ago
-    "endTime": str(int(time.time() * 1000))               # current time
+    "limit": "100",               # Max number of candles
+    "startTime": str(one_hour_ago),
+    "endTime": str(current_time)
 }
+
+# Make the GET request
+response = requests.get(url, params=params)
+
+# Check for errors
+if response.status_code == 200:
+    print("✅ Data fetched successfully!")
+    print(response.json())
+else:
+    print(f"❌ Error: {response.status_code}")
+    print(response.json())
 
 # Send GET request
 response = requests.get(url, params=params)
