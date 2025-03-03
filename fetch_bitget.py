@@ -23,12 +23,19 @@ def generate_signature(timestamp, method, request_path, body=""):
     signature = hmac.new(SECRET_KEY.encode(), message.encode(), hashlib.sha256).digest()
     return base64.b64encode(signature).decode()
 
-# 📈 Fetch historical data for indicators
+# 📈 Fetch historical data for indicators (corrected params)
 def fetch_candles(symbol, interval="15min", limit=100):
     url = "https://api.bitget.com/api/mix/v1/market/candles"
-    params = {"symbol": symbol, "granularity": interval, "limit": limit}
-    response = requests.get(url, params=params)
-    if response.status_code == 200:
+    params = {"symbol": symbol, "granularity": interval, "limit": str(limit)}
+    headers = {
+        "Content-Type": "application/json",
+        "ACCESS-KEY": API_KEY,
+        "ACCESS-SIGN": generate_signature(str(int(time.time() * 1000)), "GET", "/api/mix/v1/market/candles"),
+        "ACCESS-TIMESTAMP": str(int(time.time() * 1000)),
+        "ACCESS-PASSPHRASE": PASSPHRASE
+    }
+    response = requests.get(url, headers=headers, params=params)
+    if response.status_code == 200 and "data" in response.json():
         return response.json()["data"]
     else:
         print(f"Error fetching candles for {symbol}: {response.text}")
@@ -119,6 +126,7 @@ def monitor_all_coins():
     response = requests.get(url)
     if response.status_code == 200:
         coins = [pair["symbol"] for pair in response.json()["data"]]
+        print(f"✅ Monitoring these coins: {coins}")
         for coin in coins:
             detect_short_trade(coin)
     else:
