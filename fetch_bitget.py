@@ -18,23 +18,28 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
 # 📊 Signature generation
-def generate_signature(timestamp, method, request_path, body=""):
-    message = f"{timestamp}{method}{request_path}{body}"
+def generate_signature(timestamp, method, request_path, query_string=""):
+    message = f"{timestamp}{method}{request_path}{query_string}"
     signature = hmac.new(SECRET_KEY.encode(), message.encode(), hashlib.sha256).digest()
     return base64.b64encode(signature).decode()
 
-# 📈 Fetch historical data for indicators (corrected params)
-def fetch_candles(symbol, interval="15min", limit=100):
-    url = "https://api.bitget.com/api/mix/v1/market/candles"
-    params = {"symbol": symbol, "granularity": interval, "limit": str(limit)}
-    headers = {
-        "Content-Type": "application/json",
+# Headers setup
+def get_headers(method, path, query=""):
+    timestamp = str(int(time.time() * 1000))
+    signature = generate_signature(timestamp, method, path, query)
+    return {
         "ACCESS-KEY": API_KEY,
-        "ACCESS-SIGN": generate_signature(str(int(time.time() * 1000)), "GET", "/api/mix/v1/market/candles"),
-        "ACCESS-TIMESTAMP": str(int(time.time() * 1000)),
-        "ACCESS-PASSPHRASE": PASSPHRASE
+        "ACCESS-SIGN": signature,
+        "ACCESS-TIMESTAMP": timestamp,
+        "ACCESS-PASSPHRASE": PASSPHRASE,
+        "Content-Type": "application/json"
     }
-    response = requests.get(url, headers=headers, params=params)
+# 📈 Fetch historical data for indicators (corrected params)
+def fetch_candles(symbol, interval="900", limit=100):  # 900 = 15min
+    url = "https://api.bitget.com/api/mix/v1/market/candles"
+    query = f"symbol={symbol}&granularity={interval}&limit={limit}"
+    headers = get_headers("GET", "/api/mix/v1/market/candles", query)
+    response = requests.get(url, headers=headers, params={"symbol": symbol, "granularity": interval, "limit": limit})
     if response.status_code == 200 and "data" in response.json():
         return response.json()["data"]
     else:
@@ -126,9 +131,9 @@ def monitor_all_coins():
     response = requests.get(url)
     if response.status_code == 200:
         coins = [pair["symbol"] for pair in response.json()["data"]]
-        print(f"✅ Monitoring these coins: {coins}")
+        print(f"✅ Monitoring coins: {coins}")
         for coin in coins:
-            detect_short_trade(coin)
+            fetch_candles(coin)
     else:
         print("Error fetching coins:", response.text)
 
