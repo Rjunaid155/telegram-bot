@@ -24,14 +24,14 @@ def generate_signature(timestamp, method, request_path, body=""):
     return base64.b64encode(signature).decode()
 
 # 📈 Fetch historical data for indicators
-def fetch_candles(symbol, interval="15m", limit=100):
+def fetch_candles(symbol, interval="15min", limit=100):
     url = "https://api.bitget.com/api/mix/v1/market/candles"
     params = {"symbol": symbol, "granularity": interval, "limit": limit}
     response = requests.get(url, params=params)
     if response.status_code == 200:
         return response.json()["data"]
     else:
-        print("Error fetching candles:", response.text)
+        print(f"Error fetching candles for {symbol}: {response.text}")
         return None
 
 # 📊 Calculate RSI
@@ -53,11 +53,11 @@ def calculate_rsi(prices, period=14):
 
     return rsis[-1]
 
-# 📉 Moving Average (MA)
+# 📈 Moving Average (MA)
 def calculate_ma(prices, period=50):
     return np.mean(prices[-period:])
 
-# 📈 MACD Calculation
+# 📉 MACD Calculation
 def calculate_macd(prices, short=12, long=26, signal=9):
     short_ema = pd.Series(prices).ewm(span=short).mean()
     long_ema = pd.Series(prices).ewm(span=long).mean()
@@ -65,7 +65,7 @@ def calculate_macd(prices, short=12, long=26, signal=9):
     signal_line = macd.ewm(span=signal).mean()
     return macd.iloc[-1], signal_line.iloc[-1]
 
-# 📊 Order book data
+# 📊 Fetch order book data
 def fetch_order_book(symbol, limit=5):
     url = "https://api.bitget.com/api/mix/v1/market/depth"
     params = {"symbol": symbol, "limit": limit}
@@ -76,14 +76,14 @@ def fetch_order_book(symbol, limit=5):
         best_ask = float(data["asks"][0][0])
         return best_bid, best_ask
     else:
-        print("Error fetching order book:", response.text)
+        print(f"Error fetching order book for {symbol}: {response.text}")
         return None, None
 
 # 🔥 Short trade signal detection
 def detect_short_trade(symbol):
     candles = fetch_candles(symbol)
     if not candles:
-        return None
+        return
 
     prices = [float(candle[4]) for candle in candles]  # Close prices
 
@@ -92,11 +92,12 @@ def detect_short_trade(symbol):
     macd, signal = calculate_macd(prices)
     best_bid, _ = fetch_order_book(symbol)
 
-    if rsi > 70 and macd < signal and prices[-1] < ma:  # Bearish indicators
-        sl = round(best_bid * 1.02, 4)
-        tp = round(best_bid * 0.98, 4)
+    # 📉 Bearish conditions for SHORT trade
+    if rsi > 70 and macd < signal and prices[-1] < ma:
+        sl = round(best_bid * 1.02, 4)  # Stop Loss 2% above entry
+        tp = round(best_bid * 0.98, 4)  # Take Profit 2% below entry
         alert_msg = (
-            f"⚡ *Short Trade Signal* ⚡\n"
+            f"⚡ Strong Short Trade Signal ⚡\n"
             f"📉 Coin: {symbol}\n"
             f"📊 RSI: {round(rsi, 2)}\n"
             f"📈 MA: {round(ma, 2)}\n"
@@ -104,7 +105,7 @@ def detect_short_trade(symbol):
             f"💸 Entry Price: {best_bid}\n"
             f"📉 Stop Loss: {sl}\n"
             f"📈 Take Profit: {tp}\n"
-            f"🕒 Prediction: 15 min ahead!"
+            f"🕒 Prediction: Next 15 min!"
         )
         send_telegram_alert(alert_msg)
 
@@ -112,7 +113,7 @@ def detect_short_trade(symbol):
 def send_telegram_alert(message):
     bot.send_message(CHAT_ID, message, parse_mode="Markdown")
 
-# 🚀 Monitor all coins
+# 🚀 Monitor all altcoins
 def monitor_all_coins():
     url = "https://api.bitget.com/api/mix/v1/market/contracts?productType=umcbl"
     response = requests.get(url)
@@ -123,8 +124,9 @@ def monitor_all_coins():
     else:
         print("Error fetching coins:", response.text)
 
-# ✅ Main loop (every 5 mins)
+# ✅ Main loop (5 min interval)
 if __name__ == "__main__":
     while True:
+        print("🚀 Checking for short trade signals...")
         monitor_all_coins()
         time.sleep(300)  # 5 minutes interval
