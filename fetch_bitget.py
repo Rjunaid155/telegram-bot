@@ -89,8 +89,9 @@ def check_and_alert():
 
         if data:
             best_bid = float(data["data"]["bids"][0][0])  # ✅ Best buy price
-            stop_loss = round(best_bid * 0.98, 4)  # 🔻 2% Neeche Stop Loss
-            take_profit = round(best_bid * 1.02, 4)  # 🔺 2% Upar Take Profit
+          # 🔄 Modify Stop Loss aur Take Profit Calculation
+take_profit = round(best_bid * 0.98, 4)  # Pehle yeh stop loss tha
+stop_loss = round(best_bid * 1.02, 4)  # Pehle yeh take profit tha
             
             alert_msg = (
                 f"🔥 {symbol} ({market.upper()}) Trading Signal:\n"
