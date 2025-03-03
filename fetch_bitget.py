@@ -22,21 +22,40 @@ import time
 # Bitget API endpoint for fetching candles
 url = "https://api.bitget.com/api/mix/v1/market/candles"
 
-# Get current time in milliseconds
+# Time in milliseconds
 current_time = int(time.time() * 1000)
-one_hour_ago = current_time - (60 * 60 * 1000)  # 1 hour ago in milliseconds
+one_hour_ago = current_time - (60 * 60 * 1000)  # 1 hour ago
 
-# Request parameters
+# Request parameters (ensure everything is correctly formatted)
 params = {
-    "symbol": "BTCUSDT_UMCBL",  # Ensure the symbol is correct
-    "granularity": "300",        # 5-minute candles (300 seconds)
-    "limit": "100",               # Max number of candles
-    "startTime": str(one_hour_ago),
-    "endTime": str(current_time)
+    "symbol": "BTCUSDT_UMCBL",  # Correct trading pair format
+    "granularity": "300",        # Timeframe in seconds (5 minutes)
+    "limit": "100",              # Max candles count
+    "startTime": one_hour_ago,   # No need to convert to string
+    "endTime": current_time
 }
 
+# Send GET request
+response = requests.get(url, params=params)
+
+# Check the response
+try:
+    data = response.json()
+    if response.status_code == 200:
+        print("✅ Successfully fetched candles!")
+        print(data)
+    else:
+        print(f"❌ Error: {data.get('msg', 'Unknown error')} (Code: {data.get('code', 'No code')})")
+except Exception as e:
+    print(f"❌ Failed to parse response: {e}")
 # Make the GET request
 response = requests.get(url, params=params)
+
+import requests
+
+url = "https://api.bitget.com/api/mix/v1/market/tickers"
+response = requests.get(url)
+print(response.json())
 
 # Check for errors
 if response.status_code == 200:
