@@ -15,19 +15,19 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
-# 🛠️ Signature generation function
+# 🛠️ Signature generation function (v2)
 def generate_signature(timestamp, method, request_path, body=""):
     message = f"{timestamp}{method}{request_path}{body}"
     signature = hmac.new(SECRET_KEY.encode(), message.encode(), hashlib.sha256).digest()
     return base64.b64encode(signature).decode()
 
-# 📊 Function to fetch order book (Spot & Futures)
+# 📊 Function to fetch order book (Spot & Futures) using v2 API
 def fetch_order_book(market_type, symbol, limit=5):
     if market_type == "spot":
-        base_url = "https://api.bitget.com/api/spot/v1/market/depth"
+        base_url = "https://api.bitget.com/api/spot/v2/market/depth"
         symbol = f"{symbol}_SPBL"  # ✅ Spot ke liye symbol format
     elif market_type == "futures":
-        base_url = "https://api.bitget.com/api/mix/v1/market/depth"
+        base_url = "https://api.bitget.com/api/mix/v2/market/depth"
         symbol = f"{symbol}_UMCBL"  # ✅ Futures (USDT-M Perpetual) ke liye symbol format
     else:
         return None
@@ -41,12 +41,12 @@ def fetch_order_book(market_type, symbol, limit=5):
         print(f"Error fetching {market_type} order book:", response.text)
         return None
 
-# 🔍 Function to get all trading pairs
+# 🔍 Function to get all trading pairs using v2 API
 def get_all_trading_pairs(market_type):
     if market_type == "spot":
-        url = "https://api.bitget.com/api/spot/v1/public/symbols"
+        url = "https://api.bitget.com/api/spot/v2/public/symbols"
     elif market_type == "futures":
-        url = "https://api.bitget.com/api/mix/v1/market/contracts?productType=umcbl"
+        url = "https://api.bitget.com/api/mix/v2/market/contracts?productType=umcbl"
     else:
         return []
 
