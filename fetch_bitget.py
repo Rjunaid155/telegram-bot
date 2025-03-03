@@ -16,7 +16,31 @@ TELEGRAM_TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
+import requests
+import time
 
+# Bitget API endpoint for fetching candles
+url = "https://api.bitget.com/api/mix/v1/market/candles"
+
+# Test with a single trading pair (adjust as needed)
+params = {
+    "symbol": "BTCUSDT_UMCBL",  # Replace with any valid symbol
+    "granularity": "300",        # 5-minute candles (300 seconds)
+    "limit": "100",               # Number of candles
+    "startTime": str(int(time.time() * 1000) - 3600000),  # 1 hour ago
+    "endTime": str(int(time.time() * 1000))               # current time
+}
+
+# Send GET request
+response = requests.get(url, params=params)
+print("Status Code:", response.status_code)
+print("Response:", response.json())
+
+# Error handling
+if response.status_code != 200:
+    print("❌ Error fetching candles:", response.json())
+else:
+    print("✅ Candles fetched successfully!")
 # 📊 Signature generation
 def generate_signature(timestamp, method, request_path, query_string=""):
     message = f"{timestamp}{method}{request_path}{query_string}"
