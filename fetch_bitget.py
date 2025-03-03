@@ -5,7 +5,6 @@ import hmac
 import hashlib
 import base64
 import telebot
-from datetime import datetime, timedelta
 
 # 🔑 Bitget API Keys (Render ke environment variables se le raha hai)
 API_KEY = os.getenv("BITGET_API_KEY")
@@ -66,70 +65,47 @@ def get_all_trading_pairs(market_type):
 def send_telegram_alert(message):
     bot.send_message(CHAT_ID, message)
 
-# ⏲️ Get historical data for 15-minute intervals (for predictions)
-def get_historical_data(symbol, market):
-    if market == "spot":
-        base_url = f"https://api.bitget.com/api/spot/v1/market/kline"
-        symbol = f"{symbol}_SPBL"
-    else:
-        base_url = f"https://api.bitget.com/api/mix/v1/market/candles"  # Corrected API endpoint for futures
-        symbol = f"{symbol}_UMCBL"
+# ⚡ Spike Trading Alert Function
+def check_spike_trading(symbol, market, current_price, prev_price):
+    price_change = ((current_price - prev_price) / prev_price) * 100
 
-    params = {
-        "symbol": symbol,
-        "granularity": 900,  # 15-minute candles (900 seconds)
-        "limit": 5  # Last 5 candles for trend analysis
-    }
+    if price_change >= 2:  # 🟢 2% ya zyada bullish spike
+        alert_msg = f"🚀 {symbol} ({market.upper()}) Spike Alert: +{round(price_change, 2)}% Bullish Move!"
+        send_telegram_alert(alert_msg)
+    elif price_change <= -2:  # 🔴 2% ya zyada bearish spike
+        alert_msg = f"⚠️ {symbol} ({market.upper()}) Spike Alert: {round(price_change, 2)}% Bearish Move!"
+        send_telegram_alert(alert_msg)
 
-    response = requests.get(base_url, params=params)
-    if response.status_code == 200:
-        return response.json()["data"]
-    else:
-        print(f"Error fetching historical data for {symbol}: {response.text}")
-        return None
-
-# ⚡ Predict future movement based on past 15-min data
-def predict_movement(symbol, market):
-    data = get_historical_data(symbol, market)
-
-    if data:
-        # Fetch the last two closing prices
-        prev_close = float(data[-2][4])  # Closing price of the previous candle
-        current_close = float(data[-1][4])  # Closing price of the current candle
-
-        price_change = ((current_close - prev_close) / prev_close) * 100
-
-        # Long/Short determination based on price movement
-        if price_change >= 1.5:  # ✅ Long if price increased by 1.5% or more
-            return "LONG", round(price_change, 2)
-        elif price_change <= -1.5:  # 🔻 Short if price decreased by 1.5% or more
-            return "SHORT", round(price_change, 2)
-        else:
-            return "HOLD", round(price_change, 2)
-
-    return None, None
-
-# 🚀 Fetch & Send Alerts 15-30 minutes before the prediction
+# 🚀 Fetch & Send Alerts
 def check_and_alert():
     spot_pairs = get_all_trading_pairs("spot")
     futures_pairs = get_all_trading_pairs("futures")
 
+    previous_prices = {}  # 📌 Store previous prices for spike alerts
+
     for symbol in spot_pairs + futures_pairs:
         market = "spot" if symbol in spot_pairs else "futures"
-        signal, change = predict_movement(symbol, market)
+        data = fetch_order_book(market, symbol)
 
-        if signal and signal != "HOLD":
+        if data:
+            best_bid = float(data["data"]["bids"][0][0])  # ✅ Best buy price
+            stop_loss = round(best_bid * 0.98, 4)  # 🔻 2% Neeche Stop Loss
+            take_profit = round(best_bid * 1.02, 4)  # 🔺 2% Upar Take Profit
+            
             alert_msg = (
-                f"🚨 {symbol} ({market.upper()}) Signal Alert:\n"
-                f"💼 Position: {signal}\n"
-                f"📈 Price Change: {change}%\n"
-                f"📅 Prediction Time: {datetime.now() + timedelta(minutes=15)}\n"
-                f"Prepare for potential trade in the next 15-30 minutes."
+                f"🔥 {symbol} ({market.upper()}) Trading Signal:\n"
+                f"📌 Entry Price: {best_bid}\n"
+                f"📉 Stop Loss: {stop_loss}\n"
+                f"📈 Take Profit: {take_profit}"
             )
             send_telegram_alert(alert_msg)
 
+            # 📊 Spike Trading Alert Check
+            if symbol in previous_prices:
+                check_spike_trading(symbol, market, best_bid, previous_prices[symbol])
+            
+            previous_prices[symbol] = best_bid  # 🔄 Update previous price
+
 # ✅ Run the function
 if __name__ == "__main__":
-    while True:
-        check_and_alert()
-        time.sleep(900)  # Check every 15 minutes (900 seconds)
+    check_and_alert()
