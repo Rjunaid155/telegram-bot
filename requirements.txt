@@ -1,2 +1,5 @@
 pyTelegramBotAPI
 python-dotenv
+requests
+numpy
+pandas
