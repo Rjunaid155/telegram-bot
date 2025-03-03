@@ -5,6 +5,7 @@ import hmac
 import hashlib
 import base64
 import telebot
+from datetime import datetime, timedelta
 
 # 🔑 Bitget API Keys (Render ke environment variables se le raha hai)
 API_KEY = os.getenv("BITGET_API_KEY")
@@ -65,16 +66,9 @@ def get_all_trading_pairs(market_type):
 def send_telegram_alert(message):
     bot.send_message(CHAT_ID, message)
 
-# ⚡ Spike Trading Alert Function
-def check_spike_trading(symbol, market, current_price, prev_price):
-    price_change = ((current_price - prev_price) / prev_price) * 100
-
-    if price_change >= 2:  # 🟢 2% ya zyada bullish spike
-        alert_msg = f"🚀 {symbol} ({market.upper()}) Spike Alert: +{round(price_change, 2)}% Bullish Move!"
-        send_telegram_alert(alert_msg)
-    elif price_change <= -2:  # 🔴 2% ya zyada bearish spike
-        alert_msg = f"⚠️ {symbol} ({market.upper()}) Spike Alert: {round(price_change, 2)}% Bearish Move!"
-        send_telegram_alert(alert_msg)
+# 📅 Calculate time to alert 5 minutes before trade execution
+def get_alert_time():
+    return (datetime.utcnow() + timedelta(minutes=5)).strftime('%Y-%m-%d %H:%M:%S')
 
 # 🚀 Fetch & Send Alerts
 def check_and_alert():
@@ -89,21 +83,26 @@ def check_and_alert():
 
         if data:
             best_bid = float(data["data"]["bids"][0][0])  # ✅ Best buy price
-            stop_loss = round(best_bid * 1.02, 4)  # 🔻 Stop Loss ulta theek kar diya hai
-            take_profit = round(best_bid * 0.98, 4)  # 🔺 Take Profit ulta theek kar diya hai
+            stop_loss = round(best_bid * 0.995, 4)  # 🔻 0.5% Neeche Stop Loss
+            take_profit = round(best_bid * 1.005, 4)  # 🔺 0.5% Upar Take Profit
             
             alert_msg = (
-                f"🔥 {symbol} ({market.upper()}) Trading Signal:\n"
+                f"🔥 {symbol} ({market.upper()}) 5-Minute Trading Signal:\n"
+                f"⏰ Alert for: {get_alert_time()} (5 minutes early)\n"
                 f"📌 Entry Price: {best_bid}\n"
-                f"📉 Take Profit: {take_profit}\n"
-                f"📈 Stop Loss: {stop_loss}"
+                f"📉 Stop Loss: {stop_loss}\n"
+                f"📈 Take Profit: {take_profit}"
             )
             send_telegram_alert(alert_msg)
 
             # 📊 Spike Trading Alert Check
             if symbol in previous_prices:
-                check_spike_trading(symbol, market, best_bid, previous_prices[symbol])
-            
+                price_change = ((best_bid - previous_prices[symbol]) / previous_prices[symbol]) * 100
+                if price_change >= 0.5:
+                    send_telegram_alert(f"🚀 {symbol} Bullish spike detected!")
+                elif price_change <= -0.5:
+                    send_telegram_alert(f"⚠️ {symbol} Bearish spike detected!")
+
             previous_prices[symbol] = best_bid  # 🔄 Update previous price
 
 # ✅ Run the function
