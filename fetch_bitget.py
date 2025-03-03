@@ -35,15 +35,18 @@ def get_headers(method, path, query=""):
         "Content-Type": "application/json"
     }
 # 📈 Fetch historical data for indicators (corrected params)
-def fetch_candles(symbol, interval="900", limit=100):  # 900 = 15min
+def fetch_candles(symbol, interval="900", limit=100):
     url = "https://api.bitget.com/api/mix/v1/market/candles"
     query = f"symbol={symbol}&granularity={interval}&limit={limit}"
     headers = get_headers("GET", "/api/mix/v1/market/candles", query)
     response = requests.get(url, headers=headers, params={"symbol": symbol, "granularity": interval, "limit": limit})
+    
+    print(f"Response for {symbol}: {response.status_code} - {response.text}")
+    
     if response.status_code == 200 and "data" in response.json():
         return response.json()["data"]
     else:
-        print(f"Error fetching candles for {symbol}: {response.text}")
+        print(f"❌ Error fetching candles for {symbol}: {response.json()}")
         return None
 
 # 📊 Calculate RSI
