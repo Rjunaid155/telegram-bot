@@ -72,12 +72,12 @@ def get_historical_data(symbol, market):
         base_url = f"https://api.bitget.com/api/spot/v1/market/kline"
         symbol = f"{symbol}_SPBL"
     else:
-        base_url = f"https://api.bitget.com/api/mix/v1/market/kline"
+        base_url = f"https://api.bitget.com/api/mix/v1/market/candles"  # Corrected API endpoint for futures
         symbol = f"{symbol}_UMCBL"
 
     params = {
         "symbol": symbol,
-        "period": "15min",  # Fetching 15-minute candles
+        "granularity": 900,  # 15-minute candles (900 seconds)
         "limit": 5  # Last 5 candles for trend analysis
     }
 
