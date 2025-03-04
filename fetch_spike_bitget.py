@@ -73,20 +73,37 @@ def check_and_alert():
     spot_pairs = get_all_trading_pairs("spot")
     futures_pairs = get_all_trading_pairs("futures")
 
-    previous_prices = {}  # Store previous prices for spike alerts
+    previous_prices = {}  # 📌 Store previous prices for spike alerts
 
     for symbol in spot_pairs + futures_pairs:
         market = "spot" if symbol in spot_pairs else "futures"
         data = fetch_order_book(market, symbol)
 
-        if data:
-            best_bid = float(data["data"]["bids"][0][0])  # Best buy price
+        if data and "data" in data and data["data"]["bids"]:  # 🛡️ Check if bids list is not empty
+            best_bid = float(data["data"]["bids"][0][0])  # ✅ Best buy price
+            stop_loss = round(best_bid * 0.995, 4)  # 🔻 0.5% Neeche Stop Loss
+            take_profit = round(best_bid * 1.005, 4)  # 🔺 0.5% Upar Take Profit
+            
+            alert_msg = (
+                f"🔥 {symbol} ({market.upper()}) Spike Trading Signal:\n"
+                f"⏰ Alert for: {get_alert_time()} (5 minutes early)\n"
+                f"📌 Entry Price: {best_bid}\n"
+                f"📉 Stop Loss: {stop_loss}\n"
+                f"📈 Take Profit: {take_profit}"
+            )
+            send_telegram_alert(alert_msg)
 
-            # Spike alert check
+            # 📊 Spike Trading Alert Check
             if symbol in previous_prices:
-                check_spike_alert(symbol, market, previous_prices[symbol], best_bid)
+                price_change = ((best_bid - previous_prices[symbol]) / previous_prices[symbol]) * 100
+                if price_change >= 0.5:
+                    send_telegram_alert(f"🚀 {symbol} Bullish spike detected!")
+                elif price_change <= -0.5:
+                    send_telegram_alert(f"⚠️ {symbol} Bearish spike detected!")
 
-            previous_prices[symbol] = best_bid  # Update previous price
+            previous_prices[symbol] = best_bid  # 🔄 Update previous price
+        else:
+            print(f"No valid data for {symbol} in {market}, skipping...")
 
 # ✅ Run the function
 if __name__ == "__main__":
