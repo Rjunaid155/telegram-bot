@@ -68,6 +68,10 @@ def check_spike_alert(symbol, market, prev_price, current_price):
         )
         send_telegram_alert(alert_msg)
 
+# 🛠️ Function to generate current time + 5 minutes for alerts
+def get_alert_time():
+    return (datetime.utcnow() + timedelta(minutes=5)).strftime('%Y-%m-%d %H:%M:%S')
+
 # 🚀 Fetch & Send Spike Alerts
 def check_and_alert():
     spot_pairs = get_all_trading_pairs("spot")
