@@ -56,15 +56,20 @@ def get_all_trading_pairs(market_type):
 def send_telegram_alert(message):
     bot.send_message(CHAT_ID, message)
 
-# 📊 Function to check for spike alerts
-def check_spike_alert(symbol, market, prev_price, current_price):
+# 📊 Function to check for spike alerts based on price change and volume increase
+def check_spike_alert(symbol, market, prev_price, current_price, prev_volume, current_volume):
     price_change = ((current_price - prev_price) / prev_price) * 100
+    volume_change = ((current_volume - prev_volume) / prev_volume) * 100 if prev_volume != 0 else 0
 
-    if abs(price_change) >= 2:  # Spike threshold, 2% move
+    # Spike threshold: Price change ≥ 3% and Volume increase ≥ 50%
+    if abs(price_change) >= 3 and volume_change >= 50:
         direction = "Bullish" if price_change > 0 else "Bearish"
+        position = "Long" if price_change > 0 else "Short"  # 🟢 Add Long/Short based on price movement
         alert_msg = (
             f"🚨 {symbol} ({market.upper()}) Spike Detected:\n"
-            f"📊 Change: {round(price_change, 2)}% {direction} Move!"
+            f"📊 Price Change: {round(price_change, 2)}% {direction} Move!\n"
+            f"📈 Volume Change: {round(volume_change, 2)}% Increase!\n"
+            f"🟩 Position: {position} Signal"  # 🟩 Position Alert: Long/Short
         )
         send_telegram_alert(alert_msg)
 
@@ -78,34 +83,22 @@ def check_and_alert():
     futures_pairs = get_all_trading_pairs("futures")
 
     previous_prices = {}  # 📌 Store previous prices for spike alerts
+    previous_volumes = {}  # 📌 Store previous volumes
 
     for symbol in spot_pairs + futures_pairs:
         market = "spot" if symbol in spot_pairs else "futures"
         data = fetch_order_book(market, symbol)
 
-        if data and "data" in data and data["data"]["bids"]:  # 🛡️ Check if bids list is not empty
+        if data and "data" in data and data["data"]["bids"] and data["data"]["asks"]:  # 🛡️ Check if bids/asks list is not empty
             best_bid = float(data["data"]["bids"][0][0])  # ✅ Best buy price
-            stop_loss = round(best_bid * 0.995, 4)  # 🔻 0.5% Neeche Stop Loss
-            take_profit = round(best_bid * 1.005, 4)  # 🔺 0.5% Upar Take Profit
-            
-            alert_msg = (
-                f"🔥 {symbol} ({market.upper()}) Spike Trading Signal:\n"
-                f"⏰ Alert for: {get_alert_time()} (5 minutes early)\n"
-                f"📌 Entry Price: {best_bid}\n"
-                f"📉 Stop Loss: {stop_loss}\n"
-                f"📈 Take Profit: {take_profit}"
-            )
-            send_telegram_alert(alert_msg)
+            volume = sum(float(order[1]) for order in data["data"]["bids"])  # Calculate total volume from bids
 
-            # 📊 Spike Trading Alert Check
-            if symbol in previous_prices:
-                price_change = ((best_bid - previous_prices[symbol]) / previous_prices[symbol]) * 100
-                if price_change >= 0.5:
-                    send_telegram_alert(f"🚀 {symbol} Bullish spike detected!")
-                elif price_change <= -0.5:
-                    send_telegram_alert(f"⚠️ {symbol} Bearish spike detected!")
+            if symbol in previous_prices and symbol in previous_volumes:
+                check_spike_alert(symbol, market, previous_prices[symbol], best_bid, previous_volumes[symbol], volume)
 
-            previous_prices[symbol] = best_bid  # 🔄 Update previous price
+            # 🔄 Update previous price and volume
+            previous_prices[symbol] = best_bid
+            previous_volumes[symbol] = volume
         else:
             print(f"No valid data for {symbol} in {market}, skipping...")
 
