@@ -5,110 +5,140 @@ import hmac
 import hashlib
 import base64
 import telebot
-from datetime import datetime, timedelta
+import pandas as pd
+import numpy as np
 
-# 🔑 Bitget API Keys (Render ke environment variables se le raha hai)
+# 🌟 Environment variables for API keys
 API_KEY = os.getenv("BITGET_API_KEY")
-SECRET_KEY = os.getenv("SECRET_KEY")
+SECRET_KEY = os.getenv("BITGET_SECRET_KEY")
 PASSPHRASE = os.getenv("BITGET_PASSPHRASE")
 TELEGRAM_TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
-# 🛠️ Signature generation function (v2)
+# 📊 Generate HMAC signature for Bitget API
 def generate_signature(timestamp, method, request_path, body=""):
     message = f"{timestamp}{method}{request_path}{body}"
     signature = hmac.new(SECRET_KEY.encode(), message.encode(), hashlib.sha256).digest()
     return base64.b64encode(signature).decode()
 
-# 📊 Function to fetch order book (Spot & Futures) using correct API URLs
-def fetch_order_book(market_type, symbol, limit=5):
-    if market_type == "spot":
-        base_url = "https://api.bitget.com/api/spot/v1/market/depth"
-        symbol = f"{symbol}_SPBL"  # ✅ Spot ke liye symbol format
-    elif market_type == "futures":
-        base_url = "https://api.bitget.com/api/mix/v1/market/depth"
-        symbol = f"{symbol}_UMCBL"  # ✅ Futures ke liye symbol format
-    else:
-        return None
-
-    params = {"symbol": symbol, "limit": limit}
-    response = requests.get(base_url, params=params)
-
+# 📈 Fetch historical candle data (5 min interval)
+def fetch_candles(symbol, interval="300", limit=100):
+    url = "https://api.bitget.com/api/mix/v1/market/candles"
+    end_time = int(time.time() * 1000)
+    start_time = end_time - (limit * 300 * 1000)  # Adjust for interval
+    params = {
+        "symbol": symbol,
+        "granularity": interval,
+        "limit": str(limit),
+        "startTime": str(start_time),
+        "endTime": str(end_time)
+    }
+    response = requests.get(url, params=params)
     if response.status_code == 200:
-        return response.json()
+        data = response.json().get("data", [])
+        if not data:
+            print(f"No data for {symbol}")
+            return []
+        return data
     else:
-        print(f"Error fetching {market_type} order book:", response.text)
-        return None
-
-# 🔍 Function to get all trading pairs using correct API URLs
-def get_all_trading_pairs(market_type):
-    if market_type == "spot":
-        url = "https://api.bitget.com/api/spot/v1/public/symbols"
-    elif market_type == "futures":
-        url = "https://api.bitget.com/api/mix/v1/market/contracts?productType=umcbl"
-    else:
+        print(f"Error fetching candles for {symbol}: {response.text}")
         return []
 
-    response = requests.get(url)
+# 📊 Calculate RSI
+def calculate_rsi(prices, period=14):
+    delta = np.diff(prices)
+    gain = np.maximum(delta, 0)
+    loss = np.abs(np.minimum(delta, 0))
+
+    avg_gain = np.mean(gain[:period])
+    avg_loss = np.mean(loss[:period])
+
+    rsis = []
+    for i in range(period, len(prices)):
+        avg_gain = (avg_gain * (period - 1) + gain[i - 1]) / period
+        avg_loss = (avg_loss * (period - 1) + loss[i - 1]) / period
+        rs = avg_gain / avg_loss if avg_loss != 0 else 0
+        rsi = 100 - (100 / (1 + rs))
+        rsis.append(rsi)
+
+    return rsis[-1] if rsis else None
+
+# 📈 Calculate Moving Average (MA)
+def calculate_ma(prices, period=50):
+    if len(prices) < period:
+        return None
+    return np.mean(prices[-period:])
+
+# 📊 Calculate MACD
+def calculate_macd(prices, short=12, long=26, signal=9):
+    short_ema = pd.Series(prices).ewm(span=short).mean()
+    long_ema = pd.Series(prices).ewm(span=long).mean()
+    macd = short_ema - long_ema
+    signal_line = macd.ewm(span=signal).mean()
+    return macd.iloc[-1], signal_line.iloc[-1]
+
+# 📊 Fetch order book for best bid/ask prices
+def fetch_order_book(symbol):
+    url = "https://api.bitget.com/api/mix/v1/market/depth"
+    params = {"symbol": symbol, "limit": "5"}
+    response = requests.get(url, params=params)
     if response.status_code == 200:
-        data = response.json()
-        if market_type == "spot":
-            return [pair["symbol"].replace("_SPBL", "") for pair in data["data"]]
-        else:
-            return [pair["symbol"].replace("_UMCBL", "") for pair in data["data"]]
+        data = response.json().get("data", {})
+        best_bid = float(data["bids"][0][0])
+        best_ask = float(data["asks"][0][0])
+        return best_bid, best_ask
     else:
-        print(f"Error fetching {market_type} trading pairs:", response.text)
-        return []
+        print(f"Error fetching order book for {symbol}: {response.text}")
+        return None, None
 
-# 🔔 Send alerts to Telegram
-def send_telegram_alert(message):
-    bot.send_message(CHAT_ID, message)
+# 🔥 Short trade signal detection
+def detect_short_trade(symbol):
+    candles = fetch_candles(symbol)
+    if not candles:
+        return
 
-# 📅 Calculate time to alert 5 minutes before trade execution
-def get_alert_time():
-    return (datetime.utcnow() + timedelta(minutes=5)).strftime('%Y-%m-%d %H:%M:%S')
+    close_prices = [float(candle[4]) for candle in candles]  # Closing prices
+    rsi = calculate_rsi(close_prices)
+    ma = calculate_ma(close_prices)
+    macd, signal = calculate_macd(close_prices)
+    best_bid, _ = fetch_order_book(symbol)
 
-# 🚀 Fetch & Send Alerts
-def check_and_alert():
-    spot_pairs = get_all_trading_pairs("spot")
-    futures_pairs = get_all_trading_pairs("futures")
-
-    previous_prices = {}  # 📌 Store previous prices for spike alerts
-
-    for symbol in spot_pairs + futures_pairs:
-        market = "spot" if symbol in spot_pairs else "futures"
-        data = fetch_order_book(market, symbol)
-
-        if data:
-            best_bid = float(data["data"]["bids"][0][0])  # ✅ Best buy price
-            stop_loss = round(best_bid * 0.995, 4)  # 🔻 0.5% Neeche Stop Loss
-            take_profit = round(best_bid * 1.005, 4)  # 🔺 0.5% Upar Take Profit
-
-            # Define entry position based on trend (short or long)
-            entry_position = "Short" if best_bid < previous_prices.get(symbol, best_bid) else "Long"
-            
-            # Format message as seen in image
+    if rsi and ma and macd and signal and best_bid:
+        if rsi > 70 and macd < signal and close_prices[-1] < ma:  # Bearish signals
+            sl = round(best_bid * 1.02, 4)
+            tp = round(best_bid * 0.98, 4)
             alert_msg = (
-                f"Coin Name: {symbol}\n"
-                f"Entry Position: {entry_position}\n"
-                f"Coin Value: {best_bid}\n"
-                f"Date and Time: {get_alert_time()}\n"
-                f"Note: Manage your risk; any trade can fail. Bitnode coordinate 888'12''65\n"
+                f"⚡ Short Trade Signal ⚡\n"
+                f"📉 Coin: {symbol}\n"
+                f"📊 RSI: {round(rsi, 2)}\n"
+                f"📈 MA: {round(ma, 2)}\n"
+                f"📉 MACD: {round(macd, 2)} | Signal: {round(signal, 2)}\n"
+                f"💸 Entry Price: {best_bid}\n"
+                f"📉 Stop Loss: {sl}\n"
+                f"📈 Take Profit: {tp}\n"
+                f"🕒 Timeframe: 15 min"
             )
             send_telegram_alert(alert_msg)
 
-            # 📊 Spike Trading Alert Check
-            if symbol in previous_prices:
-                price_change = ((best_bid - previous_prices[symbol]) / previous_prices[symbol]) * 100
-                if price_change >= 0.5:
-                    send_telegram_alert(f"🚀 {symbol} Bullish spike detected!")
-                elif price_change <= -0.5:
-                    send_telegram_alert(f"⚠️ {symbol} Bearish spike detected!")
+# 📲 Send alert to Telegram
+def send_telegram_alert(message):
+    bot.send_message(CHAT_ID, message, parse_mode="Markdown")
 
-            previous_prices[symbol] = best_bid  # 🔄 Update previous price
+# 🚀 Monitor all coins
+def monitor_all_coins():
+    url = "https://api.bitget.com/api/mix/v1/market/contracts?productType=umcbl"
+    response = requests.get(url)
+    if response.status_code == 200:
+        coins = [pair["symbol"] for pair in response.json().get("data", [])]
+        for coin in coins:
+            detect_short_trade(coin)
+    else:
+        print(f"Error fetching coin list: {response.text}")
 
-# ✅ Run the function
+# ✅ Main loop — check every 5 minutes
 if __name__ == "__main__":
-    check_and_alert()
+    while True:
+        monitor_all_coins()
+        time.sleep(300)  # 5 minutes
