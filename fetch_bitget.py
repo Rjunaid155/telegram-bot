@@ -23,21 +23,32 @@ def generate_signature(timestamp, method, request_path, body=""):
     signature = hmac.new(SECRET_KEY.encode(), message.encode(), hashlib.sha256).digest()
     return base64.b64encode(signature).decode()
 
-# 📈 Fetch historical candle data (5 min interval)
-def fetch_candles(symbol, interval="300", limit=100):
+# 📈 Candles ka data fetch karne ka function
+def fetch_candles(symbol, interval="15m", limit=100):
     url = "https://api.bitget.com/api/mix/v1/market/candles"
-    end_time = int(time.time() * 1000)
-    start_time = end_time - (limit * 300 * 1000)  # Adjust for interval
     params = {
         "symbol": symbol,
         "granularity": interval,
-        "limit": str(limit),
-        "startTime": str(start_time),
-        "endTime": str(end_time)
+        "limit": limit
     }
     response = requests.get(url, params=params)
+    
     if response.status_code == 200:
-        data = response.json().get("data", [])
+        try:
+            data = response.json()
+            if isinstance(data, list):  # Agar response list hai, toh usi ko return karo
+                return data
+            elif isinstance(data, dict) and "data" in data:  # Agar dict hai, toh "data" key ko check karo
+                return data["data"]
+            else:
+                print("Unexpected data format:", data)
+                return None
+        except Exception as e:
+            print("JSON parse error:", str(e))
+            return None
+    else:
+        print("Error fetching candles:", response.text)
+        return None
         if not data:
             print(f"No data for {symbol}")
             return []
