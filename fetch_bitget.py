@@ -134,7 +134,7 @@ def monitor_all_coins():
         print("Error fetching coins:", str(e))
 
 # ✅ Main loop (every 5 mins)
-if _name_ == "_main_":
+if __name__ == "__main__":
     while True:
         print("🚀 Checking for short trade signals...")
         monitor_all_coins()
