@@ -1,18 +1,28 @@
 import requests
+import time
 import os
+import hmac
+import hashlib
+import base64
 import telebot
 from datetime import datetime, timedelta
 
 # 🔑 Bitget API Keys (Render ke environment variables se le raha hai)
 API_KEY = os.getenv("BITGET_API_KEY")
 SECRET_KEY = os.getenv("SECRET_KEY")
-PASSPHRASE = os.getenv("PASSPHRASE")
+PASSPHRASE = os.getenv("BITGET_PASSPHRASE")
 TELEGRAM_TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
-# 📊 Function to fetch order book (Spot & Futures)
+# 🛠️ Signature generation function (v2)
+def generate_signature(timestamp, method, request_path, body=""):
+    message = f"{timestamp}{method}{request_path}{body}"
+    signature = hmac.new(SECRET_KEY.encode(), message.encode(), hashlib.sha256).digest()
+    return base64.b64encode(signature).decode()
+
+# 📊 Function to fetch order book (Spot & Futures) using correct API URLs
 def fetch_order_book(market_type, symbol, limit=5):
     if market_type == "spot":
         base_url = "https://api.bitget.com/api/spot/v1/market/depth"
@@ -29,9 +39,7 @@ def fetch_order_book(market_type, symbol, limit=5):
     if response.status_code == 200:
         return response.json()
     else:
-        error_msg = f"Error fetching {market_type} data: {response.text}"
-        print(error_msg)
-        send_telegram_alert(error_msg)  # ⚠️ Send error to Telegram
+        print(f"Error fetching {market_type} order book:", response.text)
         return None
 
 # 🔍 Function to get all trading pairs using correct API URLs
@@ -51,32 +59,18 @@ def get_all_trading_pairs(market_type):
         else:
             return [pair["symbol"].replace("_UMCBL", "") for pair in data["data"]]
     else:
-        error_msg = f"Error fetching {market_type} trading pairs: {response.text}"
-        print(error_msg)
-        send_telegram_alert(error_msg)  # ⚠️ Send error to Telegram
+        print(f"Error fetching {market_type} trading pairs:", response.text)
         return []
 
 # 🔔 Send alerts to Telegram
 def send_telegram_alert(message):
     bot.send_message(CHAT_ID, message)
 
-# 📊 Function to check for gainer/loser spike alerts
-def check_spike_alert(symbol, market, prev_price, current_price):
-    price_change = ((current_price - prev_price) / prev_price) * 100
-
-    if abs(price_change) >= 2:  # Spike threshold, 2% move
-        direction = "Bullish" if price_change > 0 else "Bearish"
-        alert_msg = (
-            f"🚨 {symbol} ({market.upper()}) Spike Detected:\n"
-            f"📊 Change: {round(price_change, 2)}% {direction} Move!"
-        )
-        send_telegram_alert(alert_msg)
-
-# 🛠️ Function to generate current time + 5 minutes for alerts
+# 📅 Calculate time to alert 5 minutes before trade execution
 def get_alert_time():
     return (datetime.utcnow() + timedelta(minutes=5)).strftime('%Y-%m-%d %H:%M:%S')
 
-# 🚀 Fetch & Send Spike Alerts
+# 🚀 Fetch & Send Alerts
 def check_and_alert():
     spot_pairs = get_all_trading_pairs("spot")
     futures_pairs = get_all_trading_pairs("futures")
@@ -87,17 +81,21 @@ def check_and_alert():
         market = "spot" if symbol in spot_pairs else "futures"
         data = fetch_order_book(market, symbol)
 
-        if data and "data" in data and data["data"]["bids"]:  # 🛡️ Check if bids list is not empty
+        if data:
             best_bid = float(data["data"]["bids"][0][0])  # ✅ Best buy price
             stop_loss = round(best_bid * 0.995, 4)  # 🔻 0.5% Neeche Stop Loss
             take_profit = round(best_bid * 1.005, 4)  # 🔺 0.5% Upar Take Profit
+
+            # Define entry position based on trend (short or long)
+            entry_position = "Short" if best_bid < previous_prices.get(symbol, best_bid) else "Long"
             
+            # Format message as seen in image
             alert_msg = (
-                f"🔥 {symbol} ({market.upper()}) Spike Trading Signal:\n"
-                f"⏰ Alert for: {get_alert_time()} (5 minutes early)\n"
-                f"📌 Entry Price: {best_bid}\n"
-                f"📉 Stop Loss: {stop_loss}\n"
-                f"📈 Take Profit: {take_profit}"
+                f"Coin Name: {symbol}\n"
+                f"Entry Position: {entry_position}\n"
+                f"Coin Value: {best_bid}\n"
+                f"Date and Time: {get_alert_time()}\n"
+                f"Note: Manage your risk; any trade can fail. Bitnode coordinate 888'12''65\n"
             )
             send_telegram_alert(alert_msg)
 
@@ -110,8 +108,6 @@ def check_and_alert():
                     send_telegram_alert(f"⚠️ {symbol} Bearish spike detected!")
 
             previous_prices[symbol] = best_bid  # 🔄 Update previous price
-        else:
-            print(f"No valid data for {symbol} in {market}, skipping...")
 
 # ✅ Run the function
 if __name__ == "__main__":
