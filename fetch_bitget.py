@@ -37,7 +37,11 @@ def fetch_candles(symbol, interval="15m", limit=100):
         data = response.json()
         if isinstance(data, dict) and "data" in data:
             return data["data"]
-        else:
+        print("Unexpected response format:", data)
+        return None
+    except Exception as e:
+        print("Error parsing candles data:", str(e))
+        return None
             print("Unexpected response format:", data)
             return None
     except Exception as e:
