@@ -2,7 +2,6 @@ import requests
 import time
 import os
 import numpy as np
-import pandas as pd
 import hmac
 import hashlib
 import base64
@@ -18,9 +17,9 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 bot = Bot(token=TELEGRAM_TOKEN)
 
-# 📌 Function to get all available altcoins
+# 📌 Function to get all available altcoins (correct URL and parameters)
 def fetch_all_altcoins():
-    url = "https://api.bitget.com/api/mix/v1/market/contracts"
+    url = "https://api.bitget.com/api/mix/v1/market/contracts?productType=umcbl"  # UMCBL for futures, SPBL for spot
     response = requests.get(url)
 
     if response.status_code == 200:
@@ -31,7 +30,7 @@ def fetch_all_altcoins():
         print("Error fetching altcoins:", response.text)
         return []
 
-# 📊 Function to fetch order book
+# 📊 Function to fetch order book with correct params
 def fetch_order_book(market_type, symbol, limit=5):
     base_url = "https://api.bitget.com/api/mix/v1/market/depth"
 
@@ -80,7 +79,7 @@ def detect_spike(data):
     latest_close = float(data[-1][4])
     prev_close = float(data[-2][4])
 
-    spike_threshold = 1.5
+    spike_threshold = 1.5  # Percentage threshold for spike detection
     price_change = ((latest_close - prev_close) / prev_close) * 100
 
     if abs(price_change) >= spike_threshold:
