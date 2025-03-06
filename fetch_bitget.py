@@ -25,7 +25,8 @@ def fetch_order_book(market_type, symbol, limit=5):
         symbol = f"{symbol}_SPBL"
     elif market_type == "futures":
         base_url = "https://api.bitget.com/api/mix/v1/market/depth"
-        symbol = f"{symbol}_UMCBL"
+        if market_type == "futures":
+    symbol = f"{symbol.replace('USDT', '')}USDT_UMCBL"  # Ensures correct format
     else:
         return None
 
@@ -41,7 +42,8 @@ def fetch_order_book(market_type, symbol, limit=5):
 # 📈 Fetch price data for indicators
 def fetch_klines(symbol, interval):
     base_url = "https://api.bitget.com/api/mix/v1/market/candles"
-    params = {"symbol": symbol, "granularity": interval}
+    valid_intervals = {"1m": "60", "5m": "300", "15m": "900"}  # Correct interval mapping
+params = {"symbol": symbol, "granularity": valid_intervals[interval]}
     response = requests.get(base_url, params=params)
 
     if response.status_code == 200:
