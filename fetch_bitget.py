@@ -1,57 +1,135 @@
-import pandas as pd
-import pandas_ta as ta  # Pandas-ta for technical indicators
-import ccxt
+import requests
 import time
+import os
+import numpy as np
+import pandas as pd
+import hmac
+import hashlib
+import base64
+from datetime import datetime, timedelta
+from telegram import Bot
 
-# Initialize the Bitget exchange using ccxt
-bitget = ccxt.bitget({
-    'apiKey': 'YOUR_API_KEY',
-    'secret': 'YOUR_SECRET_KEY',
-    'enableRateLimit': True,
-})
+# 🔑 Bitget API Keys
+API_KEY = os.getenv("BITGET_API_KEY")
+SECRET_KEY = os.getenv("BITGET_SECRET_KEY")
+PASSPHRASE = os.getenv("BITGET_PASSPHRASE")
+TELEGRAM_TOKEN = os.getenv("TOKEN")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# Function to fetch OHLCV data (Open, High, Low, Close, Volume)
-def fetch_ohlcv(symbol, timeframe='5m', limit=100):
-    return bitget.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
+bot = Bot(token=TELEGRAM_TOKEN)
 
-# Function to apply indicators and generate signals
-def apply_indicators(df):
-    # Add indicators
-    df['EMA_9'] = ta.ema(df['close'], length=9)
-    df['RSI'] = ta.rsi(df['close'], length=14)
-    df['MACD'], df['MACD_signal'], df['MACD_hist'] = ta.macd(df['close'], fast=12, slow=26, signal=9)
-    df['Bollinger_upper'], df['Bollinger_middle'], df['Bollinger_lower'] = ta.bbands(df['close'], length=20)
-    
-    # Generate signals (example logic for long/short)
-    df['long_signal'] = (df['close'] > df['EMA_9']) & (df['RSI'] < 70)
-    df['short_signal'] = (df['close'] < df['EMA_9']) & (df['RSI'] > 30)
+# 📊 Function to fetch order book
+def fetch_order_book(market_type, symbol, limit=5):
+    if market_type == "spot":
+        base_url = "https://api.bitget.com/api/spot/v1/market/depth"
+        symbol = f"{symbol}_SPBL"
+    elif market_type == "futures":
+        base_url = "https://api.bitget.com/api/mix/v1/market/depth"
+        symbol = f"{symbol}_UMCBL"
+    else:
+        return None
 
-    return df
+    params = {"symbol": symbol, "limit": limit}
+    response = requests.get(base_url, params=params)
 
-# Fetch data and apply indicators
-def main():
-    symbol = 'BTC/USDT'  # Change this to your desired altcoin
-    timeframe = '5m'  # 5-minute timeframe
-    limit = 100  # Limit of 100 candles
-    
-    while True:
-        try:
-            ohlcv = fetch_ohlcv(symbol, timeframe, limit)
-            df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-            
-            # Apply indicators
-            df = apply_indicators(df)
+    if response.status_code == 200:
+        return response.json()
+    else:
+        print(f"Error fetching {market_type} order book:", response.text)
+        return None
 
-            # Check for signals
-            if df['long_signal'].iloc[-1]:
-                print(f"Long signal for {symbol}")
-            elif df['short_signal'].iloc[-1]:
-                print(f"Short signal for {symbol}")
+# 📈 Fetch price data for indicators
+def fetch_klines(symbol, interval):
+    base_url = "https://api.bitget.com/api/mix/v1/market/candles"
+    params = {"symbol": symbol, "granularity": interval}
+    response = requests.get(base_url, params=params)
 
-        except Exception as e:
-            print(f"Error: {e}")
-        
-        time.sleep(300)  # Run every 5 minutes
+    if response.status_code == 200:
+        return response.json()["data"]
+    else:
+        print(f"Error fetching {symbol} {interval} klines:", response.text)
+        return None
 
+# 📊 Calculate MA, RSI, MACD
+def calculate_indicators(data):
+    close_prices = np.array([float(candle[4]) for candle in data])
+
+    ma = np.mean(close_prices[-10:])  
+    rsi = 100 - (100 / (1 + np.mean(close_prices[-5:]) / np.mean(close_prices[-10:])))
+    macd = close_prices[-1] - np.mean(close_prices[-5:])  
+
+    return ma, rsi, macd
+
+# 🚀 Detect Spike Movements
+def detect_spike(data):
+    latest_close = float(data[-1][4])
+    prev_close = float(data[-2][4])
+
+    spike_threshold = 1.5  
+    price_change = ((latest_close - prev_close) / prev_close) * 100
+
+    if abs(price_change) >= spike_threshold:
+        return f"⚡ SPIKE ALERT: {price_change:.2f}% Price Movement Detected!"
+    return None
+
+# 🔥 Generate SL, TP, Entry, Exit
+def generate_trade_levels(entry_price):
+    stop_loss = round(entry_price * 0.98, 5)  
+    take_profit = round(entry_price * 1.05, 5)  
+    exit_price = round(entry_price * 1.03, 5)  
+
+    return stop_loss, take_profit, exit_price
+
+# 🔔 Send alerts to Telegram
+def send_telegram_alert(message):
+    bot.send_message(CHAT_ID, message)
+
+# 🚀 Fetch & Send Alerts
+def check_and_alert():
+    symbols = ["BTCUSDT", "ETHUSDT", "XRPUSDT", "SOLUSDT", "ADAUSDT", "DOGEUSDT", "MATICUSDT"]
+    timeframes = {"1m": 60, "5m": 300, "15m": 900}
+
+    for symbol in symbols:
+        for market in ["spot", "futures"]:
+            order_book = fetch_order_book(market, symbol)
+            if order_book:
+                best_bid = float(order_book["data"]["bids"][0][0])  
+                best_ask = float(order_book["data"]["asks"][0][0])  
+                entry_price = best_bid  
+
+                stop_loss, take_profit, exit_price = generate_trade_levels(entry_price)
+                trend = "📈 Long" if best_bid > best_ask else "📉 Short"
+
+                execution_time = datetime.utcnow() + timedelta(minutes=15)
+
+                message = (
+                    f"🔥 {symbol} ({market.upper()}) Trade Signal:\n"
+                    f"{trend}\n"
+                    f"📌 Entry Price: {entry_price}\n"
+                    f"🎯 Take Profit (TP): {take_profit}\n"
+                    f"🚪 Exit Price: {exit_price}\n"
+                    f"🛑 Stop Loss (SL): {stop_loss}\n"
+                    f"⏳ Execution Time: {execution_time.strftime('%H:%M:%S UTC')}"
+                )
+                send_telegram_alert(message)
+
+            for tf, seconds in timeframes.items():
+                klines = fetch_klines(symbol, seconds)
+                if klines:
+                    ma, rsi, macd = calculate_indicators(klines)
+                    spike_alert = detect_spike(klines)
+
+                    signal_msg = (
+                        f"📊 {symbol} ({market.upper()}) {tf} Timeframe:\n"
+                        f"🔹 MA: {ma:.2f}\n"
+                        f"🔸 RSI: {rsi:.2f}\n"
+                        f"📊 MACD: {macd:.2f}"
+                    )
+                    send_telegram_alert(signal_msg)
+
+                    if spike_alert:
+                        send_telegram_alert(spike_alert)
+
+# ✅ Run the function
 if __name__ == "__main__":
-    main()
+    check_and_alert()
