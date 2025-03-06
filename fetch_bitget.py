@@ -20,11 +20,13 @@ bot = Bot(token=TELEGRAM_TOKEN)
 
 # 📊 Function to fetch order book
 def fetch_order_book(market_type, symbol, limit=5):
+    
     if market_type == "spot":
         base_url = "https://api.bitget.com/api/spot/v1/market/depth"
         symbol = f"{symbol}_SPBL"
     elif market_type == "futures":
         base_url = "https://api.bitget.com/api/mix/v1/market/depth"
+        
         if market_type == "futures":
     symbol = f"{symbol.replace('USDT', '')}USDT_UMCBL"  # Ensures correct format
     else:
