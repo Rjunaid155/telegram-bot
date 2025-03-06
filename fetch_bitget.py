@@ -18,23 +18,30 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 bot = Bot(token=TELEGRAM_TOKEN)
 
-# 📊 Function to fetch order book
-def fetch_order_book(market_type, symbol, limit=5):
-    if market_type == "spot":
-        symbol = f"{symbol.replace('USDT', '')}USDT_SPBL"  # Ensures correct format
-    elif market_type == "futures":
-        symbol = f"{symbol.replace('USDT', '')}USDT_UMCBL"  # Ensures correct format
-    else:
-        return None
-
-    params = {"symbol": symbol, "limit": limit}
-    response = requests.get(base_url, params=params)
+# 📌 Function to get all available altcoins
+def fetch_all_altcoins():
+    url = "https://api.bitget.com/api/mix/v1/market/contracts"
+    response = requests.get(url)
 
     if response.status_code == 200:
-        return response.json()
+        data = response.json()["data"]
+        altcoins = [coin["symbol"] for coin in data if "USDT" in coin["symbol"]]
+        return altcoins
     else:
-        print(f"Error fetching {market_type} order book:", response.text)
+        print("Error fetching altcoins:", response.text)
+        return []
+
+# 📊 Function to fetch order book
+def fetch_order_book(market_type, symbol, limit=5):
+    base_url = "https://api.bitget.com/api/mix/v1/market/depth"
+
+    if market_type == "spot":
+        symbol = f"{symbol.replace('USDT', '')}USDT_SPBL"
+    elif market_type == "futures":
+        symbol = f"{symbol.replace('USDT', '')}USDT_UMCBL"
+    else:
         return None
+
     params = {"symbol": symbol, "limit": limit}
     response = requests.get(base_url, params=params)
 
@@ -47,8 +54,9 @@ def fetch_order_book(market_type, symbol, limit=5):
 # 📈 Fetch price data for indicators
 def fetch_klines(symbol, interval):
     base_url = "https://api.bitget.com/api/mix/v1/market/candles"
-    valid_intervals = {"1m": "60", "5m": "300", "15m": "900"}  # Correct interval mapping
-params = {"symbol": symbol, "granularity": valid_intervals[interval]}
+    valid_intervals = {"1m": "60", "5m": "300", "15m": "900"}
+
+    params = {"symbol": symbol, "granularity": valid_intervals[interval]}
     response = requests.get(base_url, params=params)
 
     if response.status_code == 200:
@@ -61,9 +69,9 @@ params = {"symbol": symbol, "granularity": valid_intervals[interval]}
 def calculate_indicators(data):
     close_prices = np.array([float(candle[4]) for candle in data])
 
-    ma = np.mean(close_prices[-10:])  
+    ma = np.mean(close_prices[-10:])
     rsi = 100 - (100 / (1 + np.mean(close_prices[-5:]) / np.mean(close_prices[-10:])))
-    macd = close_prices[-1] - np.mean(close_prices[-5:])  
+    macd = close_prices[-1] - np.mean(close_prices[-5:])
 
     return ma, rsi, macd
 
@@ -72,7 +80,7 @@ def detect_spike(data):
     latest_close = float(data[-1][4])
     prev_close = float(data[-2][4])
 
-    spike_threshold = 1.5  
+    spike_threshold = 1.5
     price_change = ((latest_close - prev_close) / prev_close) * 100
 
     if abs(price_change) >= spike_threshold:
@@ -81,9 +89,9 @@ def detect_spike(data):
 
 # 🔥 Generate SL, TP, Entry, Exit
 def generate_trade_levels(entry_price):
-    stop_loss = round(entry_price * 0.98, 5)  
-    take_profit = round(entry_price * 1.05, 5)  
-    exit_price = round(entry_price * 1.03, 5)  
+    stop_loss = round(entry_price * 0.98, 5)
+    take_profit = round(entry_price * 1.05, 5)
+    exit_price = round(entry_price * 1.03, 5)
 
     return stop_loss, take_profit, exit_price
 
@@ -91,18 +99,18 @@ def generate_trade_levels(entry_price):
 def send_telegram_alert(message):
     bot.send_message(CHAT_ID, message)
 
-# 🚀 Fetch & Send Alerts
+# 🚀 Fetch & Send Alerts for all altcoins
 def check_and_alert():
-    symbols = ["BTCUSDT", "ETHUSDT", "XRPUSDT", "SOLUSDT", "ADAUSDT", "DOGEUSDT", "MATICUSDT"]
+    symbols = fetch_all_altcoins()
     timeframes = {"1m": 60, "5m": 300, "15m": 900}
 
     for symbol in symbols:
         for market in ["spot", "futures"]:
             order_book = fetch_order_book(market, symbol)
             if order_book:
-                best_bid = float(order_book["data"]["bids"][0][0])  
-                best_ask = float(order_book["data"]["asks"][0][0])  
-                entry_price = best_bid  
+                best_bid = float(order_book["data"]["bids"][0][0])
+                best_ask = float(order_book["data"]["asks"][0][0])
+                entry_price = best_bid
 
                 stop_loss, take_profit, exit_price = generate_trade_levels(entry_price)
                 trend = "📈 Long" if best_bid > best_ask else "📉 Short"
@@ -121,7 +129,7 @@ def check_and_alert():
                 send_telegram_alert(message)
 
             for tf, seconds in timeframes.items():
-                klines = fetch_klines(symbol, seconds)
+                klines = fetch_klines(symbol, tf)
                 if klines:
                     ma, rsi, macd = calculate_indicators(klines)
                     spike_alert = detect_spike(klines)
