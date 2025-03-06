@@ -31,9 +31,11 @@ def fetch_all_altcoins():
         return []
 
 # 📊 Function to fetch order book with correct params
+# Market type ko sahi karna zaroori hai (spot ya futures)
 def fetch_order_book(market_type, symbol, limit=5):
     base_url = "https://api.bitget.com/api/mix/v1/market/depth"
 
+    # Spot market ke liye "SPBL", futures ke liye "UMCBL"
     if market_type == "spot":
         symbol = f"{symbol.replace('USDT', '')}USDT_SPBL"
     elif market_type == "futures":
@@ -49,7 +51,6 @@ def fetch_order_book(market_type, symbol, limit=5):
     else:
         print(f"Error fetching {market_type} order book:", response.text)
         return None
-
 # 📈 Fetch price data for indicators
 def fetch_klines(symbol, interval):
     base_url = "https://api.bitget.com/api/mix/v1/market/candles"
