@@ -2,9 +2,6 @@ import requests
 import time
 import os
 import numpy as np
-import hmac
-import hashlib
-import base64
 from datetime import datetime, timedelta
 from telegram import Bot
 
@@ -31,15 +28,13 @@ def fetch_all_altcoins():
         return []
 
 # 📊 Function to fetch order book with correct params
-# Market type ko sahi karna zaroori hai (spot ya futures)
 def fetch_order_book(market_type, symbol, limit=5):
     base_url = "https://api.bitget.com/api/mix/v1/market/depth"
 
-    # Spot market ke liye "SPBL", futures ke liye "UMCBL"
     if market_type == "spot":
-        symbol = f"{symbol.replace('USDT', '')}USDT_SPBL"
+        symbol = f"{symbol}_SPBL"  # Correcting Spot Symbol Format
     elif market_type == "futures":
-        symbol = f"{symbol.replace('USDT', '')}USDT_UMCBL"
+        symbol = f"{symbol}_UMCBL"  # Correcting Futures Symbol Format
     else:
         return None
 
@@ -51,10 +46,11 @@ def fetch_order_book(market_type, symbol, limit=5):
     else:
         print(f"Error fetching {market_type} order book:", response.text)
         return None
+
 # 📈 Fetch price data for indicators
 def fetch_klines(symbol, interval):
     base_url = "https://api.bitget.com/api/mix/v1/market/candles"
-    valid_intervals = {"1m": "60", "5m": "300", "15m": "900"}
+    valid_intervals = {"1m": "60", "5m": "300", "15m": "900"}  # Granularity Mapping
 
     params = {"symbol": symbol, "granularity": valid_intervals[interval]}
     response = requests.get(base_url, params=params)
@@ -69,9 +65,9 @@ def fetch_klines(symbol, interval):
 def calculate_indicators(data):
     close_prices = np.array([float(candle[4]) for candle in data])
 
-    ma = np.mean(close_prices[-10:])
+    ma = np.mean(close_prices[-10:])  # Moving Average for Last 10 Candles
     rsi = 100 - (100 / (1 + np.mean(close_prices[-5:]) / np.mean(close_prices[-10:])))
-    macd = close_prices[-1] - np.mean(close_prices[-5:])
+    macd = close_prices[-1] - np.mean(close_prices[-5:])  # MACD Calculation
 
     return ma, rsi, macd
 
