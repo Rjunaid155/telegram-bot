@@ -21,10 +21,10 @@ bot = Bot(token=TELEGRAM_TOKEN)
 # 📊 Function to fetch order book
 def fetch_order_book(market_type, symbol, limit=5):
     
-    if market_type == "spot":
-    symbol = f"{symbol.replace('USDT', '')}USDT_SPBL"  # Ensures correct format
+if market_type == "spot":
+    symbol = f"{symbol.replace('USDT','')}USDT_SPBL"  # Ensures correct format
 elif market_type == "futures":
-    symbol = f"{symbol.replace('USDT', '')}USDT_UMCBL"  # Ensures correct format
+    symbol = f"{symbol.replace('USDT','')}USDT_UMCBL"  # Ensures correct format
 else:
     return None
 
