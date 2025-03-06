@@ -23,7 +23,7 @@ def fetch_order_book(market_type, symbol, limit=5):
     
     if market_type == "spot":
         base_url = "https://api.bitget.com/api/spot/v1/market/depth"
-        symbol = f"{symbol}_SPBL"
+        symbol = f"{symbol.replace('USDT', '')}USDT_SPBL"  # Ensures correct format
     elif market_type == "futures":
         base_url = "https://api.bitget.com/api/mix/v1/market/depth"
         
