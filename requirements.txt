@@ -3,5 +3,5 @@ python-dotenv
 requests
 numpy==1.21.0
 pandas
-pandas-ta
-TA-Lib
+pandas-TA
+
