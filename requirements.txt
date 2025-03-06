@@ -1,7 +1,6 @@
 pyTelegramBotAPI
 python-dotenv
 requests
-numpy==1.21.0
+numpy
 pandas
 pandas-TA
-
