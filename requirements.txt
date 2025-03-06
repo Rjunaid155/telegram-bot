@@ -3,4 +3,4 @@ python-dotenv
 requests
 numpy
 pandas
-
+python-telegram-bot
