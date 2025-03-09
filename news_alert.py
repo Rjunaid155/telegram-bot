@@ -8,7 +8,7 @@ from email.mime.multipart import MIMEMultipart
 # Environment Variables Load karna
 NEWS_API_KEY = os.getenv("NEWS_API_KEY")
 EMAIL_USER = os.getenv("EMAIL_USER")
-EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
+EMAIL_PASSWORD = os.getenv("GMAIL_PASSWORD")
 TO_EMAIL = os.getenv("TO_EMAIL")
 TELEGRAM_BOT_TOKEN = os.getenv("TOKEN-2")  # New bot ka token use ho raha hai
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
