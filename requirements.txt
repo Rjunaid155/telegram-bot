@@ -1,7 +1,7 @@
 pyTelegramBotAPI
 python-dotenv
 requests
-numpy
+numpy==1.26.4
 pandas
 python-telegram-bot
 python-bitcoinrpc
