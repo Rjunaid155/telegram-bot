@@ -6,3 +6,4 @@ pandas
 python-telegram-bot
 python-bitcoinrpc
 pandas-ta
+tweepy==4.14.0
