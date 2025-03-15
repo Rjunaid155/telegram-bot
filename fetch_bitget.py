@@ -46,22 +46,30 @@ def get_mempool_data():
 
 # Function to analyze Reddit sentiment
 def analyze_reddit_sentiment(subreddit_name, keyword, limit=10):
-    subreddit = reddit.subreddit(subreddit_name)
-    sentiment_scores = []
+    try:
+        subreddit = reddit.subreddit(subreddit_name)
+        sentiment_scores = []
 
-    for post in subreddit.search(keyword, limit=limit):
-        score = sia.polarity_scores(post.title)
-        sentiment_scores.append(score["compound"])
+        for post in subreddit.search(keyword, limit=limit):
+            score = sia.polarity_scores(post.title)
+            sentiment_scores.append(score["compound"])
 
-    avg_sentiment = sum(sentiment_scores) / len(sentiment_scores) if sentiment_scores else 0
-    return avg_sentiment
+        avg_sentiment = sum(sentiment_scores) / len(sentiment_scores) if sentiment_scores else 0
+        return avg_sentiment
+    except Exception as e:
+        print(f"Error analyzing Reddit sentiment: {e}")
+        return 0  # Return 0 in case of an error to avoid crashing the script
 
 # Function to send Telegram alerts
 def send_telegram_alert(message):
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    data = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
-    response = requests.post(url, data=data)
-    return response.json()
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        data = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
+        response = requests.post(url, data=data)
+        return response.json()
+    except Exception as e:
+        print(f"Error sending Telegram alert: {e}")
+        return None
 
 # Main function to fetch data and analyze signals
 def main():
@@ -85,10 +93,12 @@ def main():
     # Decision Making
     if best_bid and best_ask and mempool_size:
         if reddit_sentiment < -0.3 and mempool_size > 100000:
-            message = f"🔴 *Short Trade Alert* 🔴\n\n📉 Bitcoin Short Signal Detected!\n\n💰 Best Bid: {best_bid}\n💰 Best Ask: {best_ask}\n🚀 Mempool Size: {mempool_size}\n📊 Reddit Sentiment: {reddit_sentiment}\n\n📢 *Action:* Strong Short Signal!"
+            message = f"🔴 Short Trade Alert 🔴\n\n📉 Bitcoin Short Signal Detected!\n\n💰 Best Bid: {best_bid}\n💰 Best Ask: {best_ask}\n🚀 Mempool Size: {mempool_size}\n📊 Reddit Sentiment: {reddit_sentiment}\n\n📢 Action: Strong Short Signal!"
             send_telegram_alert(message)
         else:
             print("No strong short signal detected.")
+    else:
+        print("Missing data for decision-making.")
 
 if __name__ == "__main__":
     main()
