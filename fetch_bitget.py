@@ -5,6 +5,7 @@ import praw
 import nltk
 import os
 from nltk.sentiment import SentimentIntensityAnalyzer
+from datetime import datetime
 
 # NLTK Sentiment Analyzer
 nltk.download('vader_lexicon')
@@ -58,7 +59,7 @@ def analyze_reddit_sentiment(subreddit_name, keyword, limit=10):
         return avg_sentiment
     except Exception as e:
         print(f"Error analyzing Reddit sentiment: {e}")
-        return 0  # Return 0 in case of an error to avoid crashing the script
+        return 0
 
 # Function to send Telegram alerts
 def send_telegram_alert(message):
@@ -90,15 +91,20 @@ def main():
     # Get Reddit Sentiment Score
     reddit_sentiment = analyze_reddit_sentiment("cryptocurrency", "Bitcoin")
 
-    # Decision Making
+    # Decision Making for Short/Long Signals
     if best_bid and best_ask and mempool_size:
+        # Short Signal
         if reddit_sentiment < -0.3 and mempool_size > 100000:
             message = f"🔴 Short Trade Alert 🔴\n\n📉 Bitcoin Short Signal Detected!\n\n💰 Best Bid: {best_bid}\n💰 Best Ask: {best_ask}\n🚀 Mempool Size: {mempool_size}\n📊 Reddit Sentiment: {reddit_sentiment}\n\n📢 Action: Strong Short Signal!"
             send_telegram_alert(message)
+        # Long Signal
+        elif reddit_sentiment > 0.3 and mempool_size < 50000:
+            message = f"🟢 Long Trade Alert 🟢\n\n📈 Bitcoin Long Signal Detected!\n\n💰 Best Bid: {best_bid}\n💰 Best Ask: {best_ask}\n🚀 Mempool Size: {mempool_size}\n📊 Reddit Sentiment: {reddit_sentiment}\n\n📢 Action: Strong Long Signal!"
+            send_telegram_alert(message)
         else:
-            print("No strong short signal detected.")
+            print("No strong signal detected.")
     else:
-        print("Missing data for decision-making.")
+        print("Error fetching data or data is incomplete.")
 
 if __name__ == "__main__":
     main()
