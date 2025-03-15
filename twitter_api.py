@@ -22,7 +22,7 @@ def get_latest_tweets(keyword, count=5):
         return []
 
 # Test run
-if _name_ == '_main_':
+if __name__ == '__main__':
     keyword = "Bitcoin"
     tweets = get_latest_tweets(keyword)
     print(f"Latest tweets about {keyword}:")
