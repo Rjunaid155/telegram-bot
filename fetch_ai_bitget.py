@@ -1,103 +1,108 @@
+import numpy as np
 import requests
 import json
-import numpy as np
-import pandas as pd
-import os
 import time
+import os
+from textblob import TextBlob
+import tensorflow as tf
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense
-from ta.momentum import RSIIndicator
-from ta.trend import MACD
-from textblob import TextBlob
 
-# *🔹 Load API Credentials*
-BITGET_API_URL = "https://api.bitget.com/api/v2/spot/market/orderbook?symbol=BTCUSDT"
-MEMPOOL_URL = "https://mempool.space/api/mempool"
+# ✅ Load API Credentials from Environment Variables
 TELEGRAM_TOKEN = os.getenv("TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# *🔹 Fetch Order Book Data*
-def get_order_book():
+BITGET_ORDER_BOOK_URL = "https://api.bitget.com/api/v2/spot/market/orderbook?symbol=BTCUSDT"
+MEMPOOL_URL = "https://mempool.space/api/mempool"
+
+# ✅ Function to fetch Bitget order book data
+def get_bitget_order_book():
     try:
-        response = requests.get(BITGET_API_URL)
+        response = requests.get(BITGET_ORDER_BOOK_URL)
         data = response.json()
-        return data["data"]
+        return data
     except Exception as e:
-        print(f"Error fetching order book: {e}")
+        print(f"Error fetching Bitget Order Book: {e}")
         return None
 
-# *🔹 Fetch Mempool Data*
+# ✅ Function to fetch Mempool.space data
 def get_mempool_data():
     try:
         response = requests.get(MEMPOOL_URL)
-        return response.json()
+        data = response.json()
+        return data
     except Exception as e:
-        print(f"Error fetching mempool data: {e}")
+        print(f"Error fetching Mempool Data: {e}")
         return None
 
-# *🔹 AI-Based Sentiment Analysis*
+# ✅ Function to analyze sentiment using TextBlob
 def analyze_sentiment(text):
     blob = TextBlob(text)
     return blob.sentiment.polarity
 
-# *🔹 AI Model for Price Prediction (LSTM)*
-def train_ai_model(price_data):
-    X, Y = [], []
-    for i in range(len(price_data) - 5):
-        X.append(price_data[i:i+5])
-        Y.append(price_data[i+5])
-    X, Y = np.array(X), np.array(Y)
-
-    model = Sequential([
-        LSTM(50, activation='relu', input_shape=(5, 1)),
-        Dense(1)
-    ])
-    model.compile(optimizer='adam', loss='mse')
-    model.fit(X, Y, epochs=10, batch_size=1, verbose=1)
-    return model
-
-# *🔹 Predict Next Price*
-def predict_next_price(model, latest_prices):
-    latest_prices = np.array(latest_prices).reshape(1, 5, 1)
-    return model.predict(latest_prices)[0][0]
-
-# *🔹 Technical Indicators Calculation*
-def get_technical_indicators(price_data):
-    df = pd.DataFrame({"close": price_data})
-    df["rsi"] = RSIIndicator(df["close"]).rsi()
-    df["macd"] = MACD(df["close"]).macd()
-    return df.iloc[-1]["rsi"], df.iloc[-1]["macd"]
-
-# *🔹 Send Trading Signal to Telegram*
+# ✅ Function to send Telegram alerts
 def send_telegram_alert(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     data = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
-    requests.post(url, data=data)
+    response = requests.post(url, data=data)
+    return response.json()
 
-# *🔹 AI-Enhanced Trading Signal*
-def trade_signal():
-    order_book = get_order_book()
-    if not order_book:
-        return
+# ✅ AI Model for Predicting Market Trends (LSTM)
+def train_ai_model(price_history):
+    price_history = np.array(price_history)
 
-    best_bid = float(order_book["bids"][0][0])
-    best_ask = float(order_book["asks"][0][0])
+    # 🔹 Ensure 3D Shape for LSTM (samples, timesteps, features)
+    price_history = price_history.reshape((1, price_history.shape[0], 1))
+
+    # 🔹 Define LSTM Model
+    model = Sequential([
+        LSTM(50, return_sequences=True, input_shape=(price_history.shape[1], 1)),
+        LSTM(50, return_sequences=False),
+        Dense(1)  # Output Layer
+    ])
+
+    model.compile(optimizer='adam', loss='mse')
+
+    # 🔹 Train Model (Fake y_train for now)
+    y_train = np.zeros((1, 1))  # Placeholder
+    model.fit(price_history, y_train, epochs=10, batch_size=8, verbose=1)
+
+    return model
+
+# ✅ Main function to fetch data and analyze signals
+def main():
+    print("Fetching data...")
+
+    # 🔹 Get Bitget Order Book Data
+    order_book = get_bitget_order_book()
+    if order_book and "data" in order_book:
+        best_bid = float(order_book["data"]["bids"][0][0])
+        best_ask = float(order_book["data"]["asks"][0][0])
+    else:
+        best_bid, best_ask = None, None
+
+    # 🔹 Get Mempool Data
     mempool_data = get_mempool_data()
-    mempool_size = mempool_data.get("vsize", 0) if mempool_data else 0
+    mempool_size = mempool_data.get("vsize", None)
 
-    price_history = [30000, 30100, 30200, 30350, 30400]  # Replace with actual data
-    rsi, macd = get_technical_indicators(price_history)
-    ai_model = train_ai_model(price_history)
-    predicted_price = predict_next_price(ai_model, price_history)
+    # 🔹 Sample text for sentiment analysis
+    sample_text = "Bitcoin is going to the moon!"
+    sentiment_score = analyze_sentiment(sample_text)
 
-    if predicted_price > best_ask and rsi < 30 and macd > 0:
-        message = f"🟢 Long Trade Alert 🟢\n💰 Best Ask: {best_ask}\n📊 RSI: {rsi}\n📈 MACD: {macd}\n🚀 Predicted Price: {predicted_price}"
-        send_telegram_alert(message)
-    elif predicted_price < best_bid and rsi > 70 and macd < 0:
-        message = f"🔴 Short Trade Alert 🔴\n💰 Best Bid: {best_bid}\n📊 RSI: {rsi}\n📉 MACD: {macd}\n🔥 Predicted Price: {predicted_price}"
-        send_telegram_alert(message)
+    # 🔹 Fake Price Data for AI Model Training (Replace with Real Data)
+    price_history = [best_bid, best_ask, best_bid - best_ask, mempool_size, sentiment_score]
+    model = train_ai_model(price_history)
 
-# *🔹 Run the Trading Bot*
-while True:
-    trade_signal()
-    time.sleep(60)  # Run every minute
+    # 🔹 AI Prediction (Just a Dummy Example)
+    prediction = model.predict(np.array(price_history).reshape((1, len(price_history), 1)))[0][0]
+
+    # ✅ Decision Making
+    if best_bid and best_ask and mempool_size:
+        if sentiment_score < -0.3 and mempool_size > 100000:
+            message = f"🔴 Short Trade Alert 🔴\n\n📉 Bitcoin Short Signal Detected!\n\n💰 Best Bid: {best_bid}\n💰 Best Ask: {best_ask}\n🚀 Mempool Size: {mempool_size}\n📊 Sentiment Score: {sentiment_score}\n🔮 AI Prediction: {prediction}\n\n📢 Action: Strong Short Signal!"
+            send_telegram_alert(message)
+        else:
+            print("No strong short signal detected.")
+
+if __name__ == "__main__":
+    main()
