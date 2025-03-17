@@ -1,142 +1,46 @@
 import requests
-import os
-import hmac
-import hashlib
-import base64
-import telebot
-import pandas_ta as ta
 import pandas as pd
-from datetime import datetime, timedelta
+import pandas_ta as ta
 
-# 🔑 Bitget API Keys (from environment variables)
-API_KEY = os.getenv("BITGET_API_KEY")
-SECRET_KEY = os.getenv("BITGET_SECRET_KEY")
-PASSPHRASE = os.getenv("BITGET_PASSPHRASE")
-TELEGRAM_TOKEN = os.getenv("TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-
-bot = telebot.TeleBot(TELEGRAM_TOKEN)
-
-# 🛠️ Signature generation function (v2)
-def generate_signature(timestamp, method, request_path, body=""):
-    message = f"{timestamp}{method}{request_path}{body}"
-    signature = hmac.new(SECRET_KEY.encode(), message.encode(), hashlib.sha256).digest()
-    return base64.b64encode(signature).decode()
-
-# 📊 Fetch order book (Spot & Futures)
-def fetch_order_book(market_type, symbol, limit=5):
-    if market_type == "spot":
-        base_url = "https://api.bitget.com/api/spot/v1/market/depth"
-        symbol = f"{symbol}_SPBL"
-    elif market_type == "futures":
-        base_url = "https://api.bitget.com/api/mix/v1/market/depth"
-        symbol = f"{symbol}_UMCBL"
-    else:
-        return None
-
-    params = {"symbol": symbol, "limit": limit}
-    response = requests.get(base_url, params=params)
-
-    if response.status_code == 200:
-        return response.json()
-    else:
-        print(f"Error fetching {market_type} order book:", response.text)
-        return None
-
-# 🔍 Get all trading pairs
-def get_all_trading_pairs(market_type):
-    if market_type == "spot":
-        url = "https://api.bitget.com/api/spot/v1/public/products"  # Corrected endpoint
-    elif market_type == "futures":
-        url = "https://api.bitget.com/api/mix/v1/market/contracts?productType=umcbl"
-    else:
-        return []
-
+def get_bitget_data(symbol):
+    url = f"https://api.bitget.com/api/spot/v1/market/tickers?symbol={symbol}"
     response = requests.get(url)
-    if response.status_code == 200:
-        data = response.json()
-        if market_type == "spot":
-            return [pair["symbol"].replace("_SPBL", "") for pair in data["data"]]
-        else:
-            return [pair["symbol"].replace("_UMCBL", "") for pair in data["data"]]
-    else:
-        print(f"Error fetching {market_type} trading pairs:", response.text)
-        return []
+    data = response.json()
 
-# 📅 Get alert time (5 minutes before trade)
-def get_alert_time():
-    return (datetime.utcnow() + timedelta(minutes=5)).strftime('%Y-%m-%d %H:%M:%S')
-
-# 🔔 Send alerts to Telegram
-def send_telegram_alert(message):
-    bot.send_message(CHAT_ID, message)
-
-# 📈 Calculate RSI, EMA, MACD, Bollinger Bands using pandas_ta
-def calculate_indicators(data):
-    df = pd.DataFrame(data, columns=['price'])
-    if df.empty:
-        print("No data available for indicators.")
-        return None
-    df['RSI'] = ta.rsi(df['price'], length=14)  # RSI
-    df['EMA'] = ta.ema(df['price'], length=9)  # EMA
-    macd = ta.macd(df['price'], fast=12, slow=26, signal=9)  # MACD
-    if macd is not None:
-        df['MACD'] = macd['MACD_12_26_9']
-    else:
-        df['MACD'] = None
-    bb = ta.bbands(df['price'], length=20)  # Bollinger Bands
-    if bb is not None:
-        df['BB_upper'], df['BB_middle'], df['BB_lower'] = bb['BBL_20_2.0'], bb['BBM_20_2.0'], bb['BBU_20_2.0']
+    # Extract price data
+    df = pd.DataFrame(data['data'])
+    df['close'] = df['close'].astype(float)
+    
     return df
 
-# 🏦 Fetch on-chain data from Mempool
-def fetch_mempool_data():
-    response = requests.get("https://mempool.space/api/mempool")
-    if response.status_code == 200:
-        return response.json()
-    else:
-        print("Error fetching Mempool data:", response.text)
-        return None
+def calculate_indicators(df):
+    # Calculate MACD
+    df['MACD'], df['MACD_signal'], df['MACD_diff'] = ta.macd(df['close'], fast=12, slow=26, signal=9)
 
-# 🚀 Check and send SHORT trade signals with indicators and Mempool data
-def check_and_alert_short():
-    spot_pairs = get_all_trading_pairs("spot")
-    futures_pairs = get_all_trading_pairs("futures")
-    previous_prices = {}
+    # Calculate RSI
+    df['RSI'] = ta.rsi(df['close'], length=14)
 
-    for symbol in spot_pairs + futures_pairs:
-        market = "spot" if symbol in spot_pairs else "futures"
-        data = fetch_order_book(market, symbol)
+    # Calculate EMA
+    df['EMA'] = ta.ema(df['close'], length=9)
 
-        if data:
-            best_bid = float(data["data"]["bids"][0][0])
-            stop_loss = round(best_bid * 1.005, 4)
-            take_profit = round(best_bid * 0.995, 4)
+    # Calculate Bollinger Bands
+    bb = ta.bbands(df['close'], length=20, std=2)
+    df['BB_upper'], df['BB_middle'], df['BB_lower'] = bb['BBU_20_2.0'], bb['BBM_20_2.0'], bb['BBL_20_2.0']
 
-            # 📈 Calculate indicators
-            indicators = calculate_indicators([best_bid])
-            if indicators is None:
-                print(f"Skipping {symbol} due to missing data.")
-                continue
+    return df
 
-            # 🏦 Fetch Mempool data
-            mempool_data = fetch_mempool_data()
+def check_and_alert_short(symbol):
+    df = get_bitget_data(symbol)
+    if df is not None:
+        indicators = calculate_indicators(df)
 
-            alert_msg = (
-                f"⚡ {symbol} ({market.upper()}) 5-Minute SHORT Trade Signal:\n"
-                f"⏰ Alert for: {get_alert_time()} (5 minutes early)\n"
-                f"📌 Entry Price: {best_bid}\n"
-                f"📉 Stop Loss: {stop_loss}\n"
-                f"📈 Take Profit: {take_profit}\n\n"
-                f"📊 Indicators:\n"
-                f"RSI: {indicators['RSI'].iloc[-1]}\n"
-                f"EMA: {indicators['EMA'].iloc[-1]}\n"
-                f"MACD: {indicators['MACD'].iloc[-1]}\n"
-                f"Bollinger Bands: {indicators['BB_upper'].iloc[-1]} (Upper), {indicators['BB_middle'].iloc[-1]} (Middle), {indicators['BB_lower'].iloc[-1]} (Lower)\n\n"
-                f"🏦 On-Chain (Mempool): {mempool_data['count']} unconfirmed transactions"
-            )
-            send_telegram_alert(alert_msg)
+        # Bollinger Band conditions
+        if indicators['close'].iloc[-1] < indicators['BB_lower'].iloc[-1]:
+            print(f"Short signal for {symbol}: Price below Bollinger Band lower bound")
 
-# ✅ Run the function for SHORT trades
+        # Other indicators
+        print(f"MACD: {indicators['MACD'].iloc[-1]}, RSI: {indicators['RSI'].iloc[-1]}")
+
 if __name__ == "__main__":
-    check_and_alert_short()
+    symbol = "BTCUSDT"
+    check_and_alert_short(symbol)
