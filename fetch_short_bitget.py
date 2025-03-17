@@ -1,61 +1,110 @@
 import requests
-import pandas as pd
-import pandas_ta as ta
+import time
+import os
+import hmac
+import hashlib
+import base64
+import telebot
+from datetime import datetime, timedelta
 
-def get_bitget_data(symbol, interval="5m", limit=100):
-    url = f"https://api.bitget.com/api/spot/v1/market/candles?symbol={symbol}&period={interval}&limit={limit}"
+# 🔑 Bitget API Keys (Render ke environment variables se le raha hai)
+API_KEY = os.getenv("BITGET_API_KEY")
+SECRET_KEY = os.getenv("BITGET_SECRET_KEY")
+PASSPHRASE = os.getenv("BITGET_PASSPHRASE")  # Futures trading ke liye zaroori hai
+TELEGRAM_TOKEN = os.getenv("TOKEN")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+bot = telebot.TeleBot(TELEGRAM_TOKEN)
+
+# 🛠️ Signature generation function (v2)
+def generate_signature(timestamp, method, request_path, body=""):
+    message = f"{timestamp}{method}{request_path}{body}"
+    signature = hmac.new(SECRET_KEY.encode(), message.encode(), hashlib.sha256).digest()
+    return base64.b64encode(signature).decode()
+
+# 📊 Function to fetch order book (Spot & Futures) using correct API URLs
+def fetch_order_book(market_type, symbol, limit=5):
+    if market_type == "spot":
+        base_url = "https://api.bitget.com/api/spot/v1/market/depth"
+        symbol = f"{symbol}_SPBL"  # ✅ Spot ke liye symbol format
+    elif market_type == "futures":
+        base_url = "https://api.bitget.com/api/mix/v1/market/depth"
+        symbol = f"{symbol}_UMCBL"  # ✅ Futures (USDT-M Perpetual) ke liye symbol format
+    else:
+        return None
+
+    params = {"symbol": symbol, "limit": limit}
+    response = requests.get(base_url, params=params)
+
+    if response.status_code == 200:
+        return response.json()
+    else:
+        print(f"Error fetching {market_type} order book:", response.text)
+        return None
+
+# 🔍 Function to get all trading pairs using correct API URLs
+def get_all_trading_pairs(market_type):
+    if market_type == "spot":
+        url = "https://api.bitget.com/api/spot/v1/public/symbols"
+    elif market_type == "futures":
+        url = "https://api.bitget.com/api/mix/v1/market/contracts?productType=umcbl"
+    else:
+        return []
+
     response = requests.get(url)
-    data = response.json()
-    
-    # Creating a DataFrame with time and close prices
-    df = pd.DataFrame(data['data'], columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-    df['close'] = df['close'].astype(float)
-    
-    return df
+    if response.status_code == 200:
+        data = response.json()
+        if market_type == "spot":
+            return [pair["symbol"].replace("_SPBL", "") for pair in data["data"]]
+        else:
+            return [pair["symbol"].replace("_UMCBL", "") for pair in data["data"]]
+    else:
+        print(f"Error fetching {market_type} trading pairs:", response.text)
+        return []
 
-def calculate_indicators(df):
-    # Calculate MACD
-    macd = ta.macd(df['close'], fast=12, slow=26, signal=9)
-    df['MACD'], df['MACD_signal'], df['MACD_diff'] = macd.iloc[:, 0], macd.iloc[:, 1], macd.iloc[:, 2]
-
-    # Calculate RSI
-    df['RSI'] = ta.rsi(df['close'], length=14)
-
-    # Calculate EMA
-    df['EMA'] = ta.ema(df['close'], length=9)
-
-    # Calculate Bollinger Bands
-    bb = ta.bbands(df['close'], length=20, std=2)
-    df['BB_upper'], df['BB_middle'], df['BB_lower'] = bb.iloc[:, 0], bb.iloc[:, 1], bb.iloc[:, 2]
-
-    return df
-
-def check_and_alert_short(symbol):
-    df = get_bitget_data(symbol)
-    if df is not None:
-        indicators = calculate_indicators(df)
-
-        # Check Bollinger Band and generate alert for short signals
-        if indicators['close'].iloc[-1] < indicators['BB_lower'].iloc[-1]:
-            print(f"Short signal for {symbol}: Price below Bollinger Band lower bound")
-        
-        # Print other indicators for confirmation
-        print(f"MACD: {indicators['MACD'].iloc[-1]}, RSI: {indicators['RSI'].iloc[-1]}")
-        print(f"Bollinger Bands: Upper={indicators['BB_upper'].iloc[-1]}, Lower={indicators['BB_lower'].iloc[-1]}")
-
-        # Send alert via Telegram
-        message = f"Short signal for {symbol}: MACD={indicators['MACD'].iloc[-1]}, RSI={indicators['RSI'].iloc[-1]}"
-        send_telegram_alert(message)
-
+# 🔔 Send alerts to Telegram
 def send_telegram_alert(message):
-    # Replace with your actual Telegram bot token and chat ID
-    bot_token = 'your_bot_token'
-    chat_id = 'your_chat_id'
-    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-    params = {'chat_id': chat_id, 'text': message}
-    response = requests.get(url, params=params)
-    return response.json()
+    bot.send_message(CHAT_ID, message)
 
+# 📅 Calculate time to alert 5 minutes before trade execution
+def get_alert_time():
+    return (datetime.utcnow() + timedelta(minutes=5)).strftime('%Y-%m-%d %H:%M:%S')
+
+# 🚀 Fetch & Send Alerts for SHORT trades
+def check_and_alert_short():
+    spot_pairs = get_all_trading_pairs("spot")
+    futures_pairs = get_all_trading_pairs("futures")
+
+    previous_prices = {}  # 📌 Store previous prices for spike alerts
+
+    for symbol in spot_pairs + futures_pairs:
+        market = "spot" if symbol in spot_pairs else "futures"
+        data = fetch_order_book(market, symbol)
+
+        if data:
+            best_bid = float(data["data"]["bids"][0][0])  # ✅ Best buy price
+            stop_loss = round(best_bid * 1.005, 4)  # 🔻 0.5% Upar Stop Loss (short ke liye)
+            take_profit = round(best_bid * 0.995, 4)  # 🔺 0.5% Neeche Take Profit (short ke liye)
+            
+            alert_msg = (
+                f"⚡ {symbol} ({market.upper()}) 5-Minute SHORT Trade Signal:\n"
+                f"⏰ Alert for: {get_alert_time()} (5 minutes early)\n"
+                f"📌 Entry Price: {best_bid}\n"
+                f"📉 Stop Loss: {stop_loss}\n"
+                f"📈 Take Profit: {take_profit}"
+            )
+            send_telegram_alert(alert_msg)
+
+            # 📊 Spike Trading Alert Check
+            if symbol in previous_prices:
+                price_change = ((best_bid - previous_prices[symbol]) / previous_prices[symbol]) * 100
+                if price_change >= 0.5:
+                    send_telegram_alert(f"🚀 {symbol} Bullish spike detected!")
+                elif price_change <= -0.5:
+                    send_telegram_alert(f"⚠️ {symbol} Bearish spike detected!")
+
+            previous_prices[symbol] = best_bid  # 🔄 Update previous price
+
+# ✅ Run the function for SHORT trades
 if __name__ == "__main__":
-    symbol = "BTCUSDT"
-    check_and_alert_short(symbol)
+    check_and_alert_short()
