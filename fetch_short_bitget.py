@@ -46,7 +46,7 @@ def fetch_order_book(market_type, symbol, limit=5):
 # 🔍 Get all trading pairs
 def get_all_trading_pairs(market_type):
     if market_type == "spot":
-        url = "https://api.bitget.com/api/spot/v1/public/symbols"
+        url = "https://api.bitget.com/api/spot/v1/public/products"  # Corrected endpoint
     elif market_type == "futures":
         url = "https://api.bitget.com/api/mix/v1/market/contracts?productType=umcbl"
     else:
@@ -74,10 +74,19 @@ def send_telegram_alert(message):
 # 📈 Calculate RSI, EMA, MACD, Bollinger Bands using pandas_ta
 def calculate_indicators(data):
     df = pd.DataFrame(data, columns=['price'])
+    if df.empty:
+        print("No data available for indicators.")
+        return None
     df['RSI'] = ta.rsi(df['price'], length=14)  # RSI
     df['EMA'] = ta.ema(df['price'], length=9)  # EMA
-    df['MACD'] = ta.macd(df['price'], fast=12, slow=26, signal=9)['MACD_12_26_9']  # MACD
-    df['BB_upper'], df['BB_middle'], df['BB_lower'] = ta.bbands(df['price'], length=20)  # Bollinger Bands
+    macd = ta.macd(df['price'], fast=12, slow=26, signal=9)  # MACD
+    if macd is not None:
+        df['MACD'] = macd['MACD_12_26_9']
+    else:
+        df['MACD'] = None
+    bb = ta.bbands(df['price'], length=20)  # Bollinger Bands
+    if bb is not None:
+        df['BB_upper'], df['BB_middle'], df['BB_lower'] = bb['BBL_20_2.0'], bb['BBM_20_2.0'], bb['BBU_20_2.0']
     return df
 
 # 🏦 Fetch on-chain data from Mempool
@@ -106,6 +115,9 @@ def check_and_alert_short():
 
             # 📈 Calculate indicators
             indicators = calculate_indicators([best_bid])
+            if indicators is None:
+                print(f"Skipping {symbol} due to missing data.")
+                continue
 
             # 🏦 Fetch Mempool data
             mempool_data = fetch_mempool_data()
