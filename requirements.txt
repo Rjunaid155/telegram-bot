@@ -18,3 +18,5 @@ yfinance
 statsmodels
 ta
 bitget
+smtplib
+schedule
