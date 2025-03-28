@@ -1,0 +1,8 @@
+import os
+
+BITGET_API_KEY = os.getenv("BITGET_API_KEY")
+BITGET_SECRET_KEY = os.getenv("BITGET_SECRET_KEY")
+MEXC_API_KEY = os.getenv("MEXC_API_KEY")
+MEXC_SECRET_KEY = os.getenv("MEXC_SECRET_KEY")
+EMAIL = os.getenv("EMAIL")
+EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
