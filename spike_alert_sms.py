@@ -1,7 +1,10 @@
-import os import schedule import time import requests import smtplib from email.mime.text import MIMEText
-
+import os
+import schedule
+import time
+import requests
+import smtplib
+from email.mime.text import MIMEText
 Load environment variables
-
 BITGET_API_KEY = os.getenv("BITGET_API_KEY") BITGET_SECRET_KEY = os.getenv("BITGET_SECRET_KEY") MEXC_API_KEY = os.getenv("MEXC_API_KEY") MEXC_SECRET_KEY = os.getenv("MEXC_SECRET_KEY") EMAIL = os.getenv("EMAIL") EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
 
 Function to check spike moves
