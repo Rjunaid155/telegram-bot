@@ -18,3 +18,4 @@ pytz
 statsmodels
 matplotlib
 cryptography
+schedule
