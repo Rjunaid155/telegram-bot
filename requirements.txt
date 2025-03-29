@@ -19,3 +19,5 @@ statsmodels
 matplotlib
 cryptography
 schedule
+ta
+telebot
