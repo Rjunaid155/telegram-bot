@@ -21,3 +21,7 @@ cryptography
 schedule
 ta
 telebot
+mexc-api
+bitget-api
+websocket-client
+ccxt
