@@ -19,4 +19,5 @@ statsmodels
 matplotlib
 cryptography
 schedule
+flask
 
