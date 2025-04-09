@@ -1,6 +1,6 @@
 import requests
 
-Telegram_token = "TOKEN"
+Telegram_token = "TOKEN"  # ← Fix yahan, pehle ye Telegram_token tha
 chat_id = "YOUR_CHAT_ID"
 message = "Test alert from MEXC bot — working perfectly!"
 
