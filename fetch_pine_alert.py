@@ -1,18 +1,18 @@
-import os
 import requests
+import os
 
 def send_telegram_message(message):
-    bot_token = os.getenv("TELEGRAM_TOKEN")
+    telegram_token = os.getenv("TELEGRAM_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    payload = {
+    
+    url = f"https://api.telegram.org/bot{telegram_token}/sendMessage"
+    data = {
         "chat_id": chat_id,
         "text": message
     }
-
-    response = requests.post(url, data=payload)
+    response = requests.post(url, data=data)
     print(response.status_code)
     print(response.text)
 
 # Test message
-send_telegram_message("Test alert from MEXC bot — working perfectly!")
+send_telegram_message("Test alert from MEXC bot – working perfectly!")
