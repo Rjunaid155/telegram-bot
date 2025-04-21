@@ -29,7 +29,7 @@ def send_telegram_message(message):
     except Exception as e:
         print(f"Telegram error: {e}")
 
-def fetch_futures_klines(symbol, interval="5m", limit=100):
+def fetch_klines(symbol, interval="5m", limit=100):
     url = f"https://contract.mexc.com/api/v1/contract/kline/{symbol}?interval={interval}&limit={limit}"
     response = requests.get(url)
     try:
