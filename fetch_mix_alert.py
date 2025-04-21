@@ -29,14 +29,15 @@ def send_telegram_message(message):
     except Exception as e:
         print(f"Telegram error: {e}")
 
-def fetch_klines(symbol, interval, limit=100):
-    url = f"https://api.mexc.com/api/v1/klines?symbol={symbol}&interval={interval}&limit={limit}"
+def fetch_futures_klines(symbol, interval="5m", limit=100):
+    url = f"https://contract.mexc.com/api/v1/contract/kline/{symbol}?interval={interval}&limit={limit}"
     response = requests.get(url)
     try:
         data = response.json()
-        if not isinstance(data, list):
+        if "data" not in data:
             raise ValueError(f"Invalid API response: {data}")
-        df = pd.DataFrame(data, columns=["timestamp", "open", "high", "low", "close", "volume"])
+        df = pd.DataFrame(data["data"])
+        df.columns = ["timestamp", "open", "high", "low", "close", "volume", "turnover"]
         df["close"] = pd.to_numeric(df["close"], errors='coerce')
         df["open"] = pd.to_numeric(df["open"], errors='coerce')
         df["high"] = pd.to_numeric(df["high"], errors='coerce')
@@ -44,6 +45,9 @@ def fetch_klines(symbol, interval, limit=100):
         df["volume"] = pd.to_numeric(df["volume"], errors='coerce')
         df.dropna(inplace=True)
         return df
+    except Exception as e:
+        print(f"Error fetching {symbol} - Invalid API response: {data}")
+        return pd.DataFrame()
     except Exception as e:
         print(f"Error fetching {symbol} - {e}")
         return pd.DataFrame()
