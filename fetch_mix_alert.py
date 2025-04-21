@@ -30,19 +30,23 @@ def send_telegram_message(message):
         print(f"Telegram error: {e}")
 
 def fetch_klines(symbol, interval, limit=100):
-    url = f"{MEXC_BASE_URL}/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
+    url = f"https://api.mexc.com/api/v1/klines?symbol={symbol}&interval={interval}&limit={limit}"
     response = requests.get(url)
-    data = response.json()
-    if not isinstance(data, list):
-        raise ValueError(f"Invalid API response: {data}")
-    df = pd.DataFrame(data, columns=["timestamp", "open", "high", "low", "close", "volume", "close_time", "quote_asset_volume", "num_trades", "taker_base_vol", "taker_quote_vol", "ignore"])
-    df["close"] = pd.to_numeric(df["close"], errors='coerce')
-    df["open"] = pd.to_numeric(df["open"], errors='coerce')
-    df["high"] = pd.to_numeric(df["high"], errors='coerce')
-    df["low"] = pd.to_numeric(df["low"], errors='coerce')
-    df["volume"] = pd.to_numeric(df["volume"], errors='coerce')
-    df.dropna(inplace=True)
-    return df
+    try:
+        data = response.json()
+        if not isinstance(data, list):
+            raise ValueError(f"Invalid API response: {data}")
+        df = pd.DataFrame(data, columns=["timestamp", "open", "high", "low", "close", "volume"])
+        df["close"] = pd.to_numeric(df["close"], errors='coerce')
+        df["open"] = pd.to_numeric(df["open"], errors='coerce')
+        df["high"] = pd.to_numeric(df["high"], errors='coerce')
+        df["low"] = pd.to_numeric(df["low"], errors='coerce')
+        df["volume"] = pd.to_numeric(df["volume"], errors='coerce')
+        df.dropna(inplace=True)
+        return df
+    except Exception as e:
+        print(f"Error fetching {symbol} - {e}")
+        return pd.DataFrame()
 
 def analyze(symbol):
     try:
