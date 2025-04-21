@@ -3,6 +3,7 @@ pytz
 requests
 numpy==1.26.4
 pandas
+pandas_ta
 python-telegram-bot
 python-bitcoinrpc
 pymysql
