@@ -6,7 +6,7 @@ import pandas_ta as ta
 import datetime
 
 # === CONFIGURATION ===
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_TOKEN = os.getenv("TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 MEXC_BASE_URL = "https://api.mexc.com"
 
