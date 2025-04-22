@@ -26,13 +26,15 @@ ALL_SYMBOLS_URL = "https://api.bitget.com/api/v2/market/tickers?productType=umcb
 
 def get_all_futures_symbols():
     try:
-        response = requests.get(ALL_SYMBOLS_URL).json()
-        symbols = [item['symbol'] for item in response['data']]
+        response = 
+        requests.get(ALL_SYMBOLS_URL)
+        print("Raw response:", response.text)  # Debug ke liye
+        data = response.json()
+        symbols = [item["symbol"] for item in data["data"]]
         return symbols
     except Exception as e:
         print("Symbol fetch error:", e)
         return []
-
 def fetch_klines(symbol: str, interval: str, limit=100):
     try:
         params = {
