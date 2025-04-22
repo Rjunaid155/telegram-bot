@@ -22,7 +22,7 @@ def send_telegram_message(message):
         print(f"Telegram error: {e}")
 
 def fetch_bitget_candles(symbol, interval="5min", limit=50):
-    url = f"https://api.bitget.com/api/v2/market/candles?symbol={symbol}&granularity={interval}&limit={limit}"
+    url = f"https://api.bitget.com/api/mix/v1/market/candles?symbol={symbol}&granularity={interval}&limit={limit}"
     headers = {"User-Agent": "Mozilla/5.0"}
     try:
         response = requests.get(url, headers=headers)
