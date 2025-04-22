@@ -1,4 +1,17 @@
-send_telegram_message("Bot started successfully!")
+import requests
+import os
+
+def send_telegram_message(message):
+    token = os.getenv("TELEGRAM_TOKEN")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload = {"chat_id": chat_id, "text": message}
+    try:
+        response = requests.post(url, data=payload)
+        if response.status_code != 200:
+            print("Failed to send message:", response.text)
+    except Exception as e:
+        print("Telegram error:", e)
 import requests
 import time
 import pandas as pd
