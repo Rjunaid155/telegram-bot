@@ -1,106 +1,64 @@
 import requests
-import time
 import pandas as pd
-import pandas_ta as ta
-import datetime
+import time
 import os
 
-TELEGRAM_TOKEN = os.getenv("TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-
-if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-    print("Missing Telegram credentials.")
-    exit()
-
-MEXC_BASE_URL = "https://api.mexc.com"
+TELEGRAM_TOKEN = os.getenv('TOKEN')
+TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
 SYMBOLS = [
-    "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT",
-    "OPUSDT", "AVAXUSDT", "MATICUSDT", "LTCUSDT", "DOTUSDT"
+    'BTCUSDT_UMCBL', 'ETHUSDT_UMCBL', 'SOLUSDT_UMCBL', 'XRPUSDT_UMCBL',
+    'AVAXUSDT_UMCBL', 'DOGEUSDT_UMCBL', 'OPUSDT_UMCBL', 'LTCUSDT_UMCBL',
+    'MATICUSDT_UMCBL', 'DOTUSDT_UMCBL'
 ]
 
-RSI_OVERBOUGHT = 80
-RSI_OVERSOLD = 20
-
-def send_telegram_message(message):
+def send_telegram_alert(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": message,
-        "parse_mode": "Markdown"
+        'chat_id': TELEGRAM_CHAT_ID,
+        'text': message
     }
+    response = requests.post(url, data=payload)
+    print("Telegram response:", response.text)
+
+def fetch_bitget_candles(symbol, interval="5min", limit=100):
+    url = f"https://api.bitget.com/api/v2/market/candles?symbol={symbol}&granularity={interval}&limit={limit}"
     try:
-        response = requests.post(url, data=payload)
-        print("Telegram response:", response.text)
+        response = requests.get(url)
+        data = response.json()
+        if 'data' not in data or not data['data']:
+            print(f"No candle data for {symbol}")
+            return None
+        df = pd.DataFrame(data['data'], columns=[
+            'timestamp', 'open', 'high', 'low', 'close', 'volume'
+        ])
+        df['close'] = df['close'].astype(float)
+        return df
     except Exception as e:
-        print(f"Telegram error: {e}")
+        print(f"Error fetching {symbol}: {e}")
+        return None
 
-def fetch_klines(symbol, interval, limit=100):
-    url = f"{MEXC_BASE_URL}/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
-    response = requests.get(url)
-    data = response.json()
-    
-    # Handle case if response is not list
-    if not isinstance(data, list):
-        print(f"Unexpected response for {symbol}: {data}")
-        return pd.DataFrame()
-    
-    df = pd.DataFrame(data)
-    df.columns = [f"col_{i}" for i in range(len(df.columns))]  # Dynamic column names
+def analyze_symbol(symbol):
+    df = fetch_bitget_candles(symbol)
+    if df is None or df.empty or 'close' not in df.columns:
+        print(f"Skipping {symbol} due to missing data.")
+        return
 
-    df["open"] = pd.to_numeric(df["col_1"])
-    df["high"] = pd.to_numeric(df["col_2"])
-    df["low"] = pd.to_numeric(df["col_3"])
-    df["close"] = pd.to_numeric(df["col_4"])
-    df["volume"] = pd.to_numeric(df["col_5"])
-    
-    return df
+    last = df['close'].iloc[-1]
+    prev = df['close'].iloc[-2]
+    change_pct = ((last - prev) / prev) * 100
 
-def analyze(symbol):
-    try:
-        df_1h = fetch_klines(symbol, "1h")
-        df_4h = fetch_klines(symbol, "4h")
-        df_1m = fetch_klines(symbol, "1m", limit=5)
+    if abs(change_pct) > 1.2:
+        direction = "LONG" if change_pct > 0 else "SHORT"
+        msg = f"{symbol.replace('_UMCBL', '')} | {direction} | Move: {change_pct:.2f}% | Entry: {last}"
+        send_telegram_alert(msg)
 
-        df_1h["rsi"] = ta.rsi(df_1h["close"], length=14)
-        df_4h["rsi"] = ta.rsi(df_4h["close"], length=14)
-        df_1h.ta.macd(close='close', fast=12, slow=26, signal=9, append=True)
+def main():
+    send_telegram_alert("Signal bot is now running.")
+    while True:
+        for symbol in SYMBOLS:
+            analyze_symbol(symbol)
+        time.sleep(180)  # check every 3 mins
 
-        rsi_1h = df_1h["rsi"].iloc[-1]
-        rsi_4h = df_4h["rsi"].iloc[-1]
-        macd = df_1h["MACD_12_26_9"].iloc[-1]
-        macds = df_1h["MACDs_12_26_9"].iloc[-1]
-
-        last_candle = df_1m.iloc[-1]
-        candle_body = abs(last_candle["close"] - last_candle["open"])
-        candle_range = last_candle["high"] - last_candle["low"]
-        big_candle = (candle_body / last_candle["open"]) * 100 >= 0.6  # 0.6% movement
-
-        print(f"\n[{symbol}]")
-        print(f"RSI 1h: {rsi_1h:.2f}, RSI 4h: {rsi_4h:.2f}, MACD: {macd:.2f}, MACDs: {macds:.2f}, Big Candle: {big_candle}")
-
-        msg_type = None
-        if rsi_1h >= RSI_OVERBOUGHT and rsi_4h >= RSI_OVERBOUGHT:
-            msg_type = "Short Signal"
-        elif rsi_1h <= RSI_OVERSOLD and rsi_4h <= RSI_OVERSOLD:
-            msg_type = "Long Signal"
-        elif big_candle:
-            if candle_body > 0:
-                msg_type = "Spike Alert – Long Possible"
-            else:
-                msg_type = "Spike Alert – Short Possible"
-
-        if msg_type:
-            time_now = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-            message = f"{msg_type}\n\n*Coin:* {symbol}\n*RSI 1h:* {rsi_1h:.2f}\n*RSI 4h:* {rsi_4h:.2f}\n*MACD:* {macd:.2f}\n*Signal:* {macds:.2f}\n*Time:* {time_now} UTC"
-            send_telegram_message(message)
-        else:
-            print(f"No signal for {symbol}")
-    except Exception as e:
-        print(f"Error analyzing {symbol}: {e}")
-
-# === RUN ===
-print("Signal bot is now running.")
-for coin in SYMBOLS:
-    analyze(coin)
-    time.sleep(1)
+if __name__ == "__main__":
+    main()
