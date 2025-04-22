@@ -39,15 +39,21 @@ def fetch_klines(symbol, interval, limit=100):
     url = f"{MEXC_BASE_URL}/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
     response = requests.get(url)
     data = response.json()
-    df = pd.DataFrame(data, columns=[
-        "timestamp", "open", "high", "low", "close", "volume", "close_time",
-        "quote_asset_volume", "num_trades", "taker_base_vol", "taker_quote_vol", "ignore"
-    ])
-    df["close"] = pd.to_numeric(df["close"])
-    df["high"] = pd.to_numeric(df["high"])
-    df["low"] = pd.to_numeric(df["low"])
-    df["open"] = pd.to_numeric(df["open"])
-    df["volume"] = pd.to_numeric(df["volume"])
+    
+    # Handle case if response is not list
+    if not isinstance(data, list):
+        print(f"Unexpected response for {symbol}: {data}")
+        return pd.DataFrame()
+    
+    df = pd.DataFrame(data)
+    df.columns = [f"col_{i}" for i in range(len(df.columns))]  # Dynamic column names
+
+    df["open"] = pd.to_numeric(df["col_1"])
+    df["high"] = pd.to_numeric(df["col_2"])
+    df["low"] = pd.to_numeric(df["col_3"])
+    df["close"] = pd.to_numeric(df["col_4"])
+    df["volume"] = pd.to_numeric(df["col_5"])
+    
     return df
 
 def analyze(symbol):
