@@ -1,3 +1,4 @@
+send_telegram_message("Bot started successfully!")
 import requests
 import time
 import pandas as pd
