@@ -1,119 +1,107 @@
-import os
 import requests
-import time
 import pandas as pd
 import pandas_ta as ta
-import datetime
+from datetime import datetime
+import time
 
-# === CONFIGURATION ===
-TELEGRAM_TOKEN = os.getenv("TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-MEXC_BASE_URL = "https://api.mexc.com"
+# === TELEGRAM CONFIGURATION ===
+TELEGRAM_TOKEN = ("TOKEN")
+CHAT_ID = ("TELEGRAM_CHAT_ID")
 
-RSI_OVERBOUGHT = 85
-RSI_OVERSOLD = 15
-
-# === SYMBOL FETCHING ===
-def fetch_all_symbols():
+def send_telegram_alert(message):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": CHAT_ID,
+        "text": message,
+        "parse_mode": "Markdown"
+    }
     try:
-        url = f"{MEXC_BASE_URL}/api/v3/exchangeInfo"
-        response = requests.get(url)
-        data = response.json()
-        return [s["symbol"] for s in data["symbols"] if s["quoteAsset"] == "USDT" and s["status"] == "TRADING"]
+        requests.post(url, data=payload)
+    except Exception as e:
+        print(f"Telegram Error: {e}")
+
+# === BITGET API CONFIG ===
+BITGET_API_URL = "https://api.bitget.com/api/v2/market/candles"
+ALL_SYMBOLS_URL = "https://api.bitget.com/api/v2/market/tickers?productType=umcbl"
+
+def get_all_futures_symbols():
+    try:
+        response = requests.get(ALL_SYMBOLS_URL).json()
+        symbols = [item['symbol'] for item in response['data']]
+        return symbols
     except Exception as e:
         print("Symbol fetch error:", e)
         return []
-    
-# === TELEGRAM MESSAGE ===
-def send_telegram_message(message):
-    try:
-        if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-            print("Missing Telegram credentials.")
-            return
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        payload = {
-            "chat_id": TELEGRAM_CHAT_ID,
-            "text": message,
-            "parse_mode": "Markdown"
-        }
-        response = requests.post(url, data=payload)
-        print("Telegram response:", response.text)
-    except Exception as e:
-        print("Telegram error:", e)
 
-# === KLINES ===
-def fetch_klines(symbol, interval, limit=100):
+def fetch_klines(symbol: str, interval: str, limit=100):
     try:
-        url = f"{MEXC_BASE_URL}/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
-        response = requests.get(url)
-        data = response.json()
-        df = pd.DataFrame(data, columns=[
-            "timestamp", "open", "high", "low", "close", "volume",
-            "close_time", "quote_asset_volume", "num_trades", "taker_base_vol", "taker_quote_vol", "ignore"
-        ])
-        df["close"] = pd.to_numeric(df["close"])
-        df["open"] = pd.to_numeric(df["open"])
-        df["high"] = pd.to_numeric(df["high"])
-        df["low"] = pd.to_numeric(df["low"])
-        df["volume"] = pd.to_numeric(df["volume"])
-        return df
+        params = {
+            "symbol": symbol,
+            "granularity": interval,
+            "limit": limit
+        }
+        res = requests.get(BITGET_API_URL, params=params).json()
+        if "data" in res:
+            df = pd.DataFrame(res['data'], columns=[
+                "timestamp", "open", "high", "low", "close", "volume", "turnover"
+            ])
+            df["close"] = df["close"].astype(float)
+            df["timestamp"] = pd.to_datetime(df["timestamp"], unit='ms')
+            return df[::-1].reset_index(drop=True)
+        return pd.DataFrame()
     except Exception as e:
-        print(f"Kline fetch error for {symbol}:", e)
+        print(f"Error fetching {symbol} - {e}")
         return pd.DataFrame()
 
-# === ANALYSIS ===
-def analyze(symbol):
+def analyze_symbol(symbol):
     try:
-        df_1h = fetch_klines(symbol, "1h")
-        df_4h = fetch_klines(symbol, "4h")
-        df_1m = fetch_klines(symbol, "1m", limit=5)
+        df_1h = fetch_klines(symbol, "1H")
+        df_4h = fetch_klines(symbol, "4H")
+        df_3m = fetch_klines(symbol, "3m")
 
-        if df_1h.empty or df_4h.empty or df_1m.empty:
+        if df_1h.empty or df_4h.empty or df_3m.empty:
             return
 
-        df_1h["rsi"] = ta.rsi(df_1h["close"], length=14)
-        df_4h["rsi"] = ta.rsi(df_4h["close"], length=14)
-        df_1h.ta.macd(close='close', fast=12, slow=26, signal=9, append=True)
+        df_1h['rsi'] = ta.rsi(df_1h['close'], length=14)
+        macd_1h = ta.macd(df_1h['close'])
+        df_1h = pd.concat([df_1h, macd_1h], axis=1)
 
-        rsi_1h = df_1h["rsi"].iloc[-1]
-        rsi_4h = df_4h["rsi"].iloc[-1]
-        macd = df_1h["MACD_12_26_9"].iloc[-1]
-        macds = df_1h["MACDs_12_26_9"].iloc[-1]
+        macd_4h = ta.macd(df_4h['close'])
+        df_4h = pd.concat([df_4h, macd_4h], axis=1)
 
-        # 1-minute spike candle check
-        last_candle = df_1m.iloc[-1]
-        candle_body = abs(last_candle["close"] - last_candle["open"])
-        big_candle = (candle_body / last_candle["open"]) * 100 >= 1.0
+        rsi = round(df_1h['rsi'].iloc[-1], 2)
+        macd_trend_1h = "Bullish" if df_1h['MACD_12_26_9'].iloc[-1] > 0 else "Bearish"
+        macd_trend_4h = "Bullish" if df_4h['MACD_12_26_9'].iloc[-1] > 0 else "Bearish"
 
-        msg_type = None
-        if rsi_1h >= RSI_OVERBOUGHT and rsi_4h >= RSI_OVERBOUGHT:
-            msg_type = "Short Signal"
-        elif rsi_1h <= RSI_OVERSOLD and rsi_4h <= RSI_OVERSOLD:
-            msg_type = "Long Signal"
-        elif big_candle:
-            if last_candle["close"] > last_candle["open"]:
-                msg_type = "Bonus Spike – Long Possible"
-            else:
-                msg_type = "Bonus Spike – Short Possible"
+        # === LONG/SHORT ALERT ===
+        if rsi < 20 and macd_trend_1h == "Bullish":
+            msg = f"[ALERT] LONG: {symbol}\nRSI (1H): {rsi} | MACD: {macd_trend_1h}\nEntry Soon - Big Bounce Expected"
+            print(msg + "\n")
+            send_telegram_alert(msg)
 
-        if msg_type:
-            time_now = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-            message = f"{msg_type} Detected\n\n*Coin:* {symbol}\n*RSI 1h:* {rsi_1h:.2f}\n*RSI 4h:* {rsi_4h:.2f}\n*MACD:* {macd:.2f}\n*Signal:* {macds:.2f}\n*Time:* {time_now} UTC"
-            send_telegram_message(message)
+        elif rsi > 80 and macd_trend_4h == "Bearish":
+            msg = f"[ALERT] SHORT: {symbol}\nRSI (4H): {rsi} | MACD: {macd_trend_4h}\nHeavy Resistance Zone"
+            print(msg + "\n")
+            send_telegram_alert(msg)
+
+        # === BONUS SPIKE ALERT ===
+        last_candle = df_3m.iloc[-1]
+        body = abs(float(last_candle['close']) - float(last_candle['open']))
+        wick = float(last_candle['high']) - float(last_candle['low'])
+
+        if wick != 0 and body / wick > 0.7:
+            msg = f"[BONUS ALERT] {symbol}\nCandle Spike Detected in 3m TF\nPotential Big Move Incoming!"
+            print(msg + "\n")
+            send_telegram_alert(msg)
 
     except Exception as e:
-        print(f"Analysis error for {symbol}:", e)
+        print(f"Error analyzing {symbol}: {e}")
 
-# === MAIN ===
 def main():
-    print("Bot started...")
-    send_telegram_message("Signal bot is now running.")
-    symbols = fetch_all_symbols()
-
+    symbols = get_all_futures_symbols()
     for symbol in symbols:
-        if symbol.endswith("USDT"):
-            analyze(symbol)
-            time.sleep(0.5)  # To avoid rate limits
+        analyze_symbol(symbol)
+        time.sleep(0.8)  # Respect API rate limits
 
 if __name__ == "__main__":
     main()
