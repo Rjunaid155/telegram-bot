@@ -34,30 +34,28 @@ def get_usdt_pairs():
         return []
 
 def get_kline_v3(symbol, interval, limit=100):
-    url = f"https://api.bitget.com/api/v3/mix/market/candles"  # v3 URL
+    url = f"https://api.bitget.com/api/v3/mix/market/candles"  # Bitget V3 API URL
     params = {
         "symbol": symbol,
         "granularity": interval,
         "limit": limit
     }
-
+    
     try:
         response = requests.get(url, params=params, timeout=10)
-        response.raise_for_status()
+        response.raise_for_status()  # Raises an error for bad responses
         data = response.json()
 
-        print("API Response (v3) for symbol", symbol, ":", data)
-        
-        # Check for error codes in the response
+        # Check if the API response is successful
         if data.get('code') != '00000':
             print(f"API Error for {symbol}: {data.get('msg')}")
             return []
 
-        # Assuming the data structure is the same as v2
-        if 'data' in data and isinstance(data['data'], list) and data['data']:
+        # Assuming the expected structure of the response data
+        if 'data' in data and isinstance(data['data'], list):
             candles = []
             for x in data['data']:
-                if len(x) >= 7:  # Validate the length
+                if len(x) >= 7:  # Validate the length of the data
                     try:
                         timestamp = int(x[0])
                         open_price = float(x[1])
@@ -69,15 +67,29 @@ def get_kline_v3(symbol, interval, limit=100):
                         candles.append([timestamp, open_price, high_price, low_price, close_price, volume])
                     except ValueError as ve:
                         print(f"Conversion error for data: {x}, error: {ve}")
-
             return candles
         else:
             print("No valid data found for symbol:", symbol)
             return []
-
+    
     except requests.exceptions.RequestException as e:
         print(f"Kline request error for {symbol}: {e}")
         return []
+
+if _name_ == "_main_":
+    print("⏳ Scanning Bitget Futures...")
+    
+    # Define your parameters
+    symbol = "BTCUSDT"  # Example symbol
+    interval = "1m"     # Example interval
+    limit = 100         # Example limit
+
+    try:
+        # Call the updated function
+        candles = get_kline_v3(symbol, interval, limit)
+        print("Candle Data:", candles)
+    except Exception as e:
+        print(f"Main error: {e}")
 def calculate_rsi(closes, period=14):
     gains, losses = [], []
     for i in range(1, len(closes)):
