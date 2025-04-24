@@ -41,9 +41,10 @@ def get_kline(symbol, interval, limit=100):
         "granularity": interval,
         "limit": limit
     }
+    
     try:
         response = requests.get(url, params=params, timeout=10)
-        response.raise_for_status()  # HTTP errors ka check karein
+        response.raise_for_status()  # Check for HTTP errors
         data = response.json()
 
         # Debugging: Print the API response
@@ -64,7 +65,7 @@ def get_kline(symbol, interval, limit=100):
                         float(x[2]),  # high
                         float(x[3]),  # low
                         float(x[4]),  # close
-                        int(x[5])  # volume
+                        float(x[5]),  # volume (change this to float)
                     ])
                 except ValueError as ve:
                     print(f"Conversion error for data: {x}, error: {ve}")
