@@ -24,7 +24,7 @@ def send_telegram_alert(msg):
         print("Telegram error:", e)
 
 def get_usdt_pairs():
-    url = "https://api.bitget.com/api/mix/v1/market/contracts?productType=umcbl"
+    url = "https://api.bitget.com/api/v2/mix/market/tickers?productType=USDT-FUTURES"
     try:
         res = requests.get(url, timeout=10)
         data = res.json()
@@ -34,7 +34,7 @@ def get_usdt_pairs():
         return []
 
 def get_kline(symbol, interval, limit=100):
-    url = "https://api.bitget.com/api/mix/v1/market/depth"
+    url = f"https://api.bitget.com/api/v2/mix/market/candles"
     params = {
         "symbol": symbol,
         "productType": "USDT-FUTURES",
