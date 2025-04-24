@@ -47,7 +47,6 @@ def get_kline(symbol, interval, limit=100):
         response.raise_for_status()  # Check for HTTP errors
         data = response.json()
 
-        # Debugging: Print the API response
         print("API Response for symbol", symbol, ":", data)
 
         # Ensure that the API response contains the necessary keys
@@ -58,18 +57,26 @@ def get_kline(symbol, interval, limit=100):
         if 'data' in data and isinstance(data['data'], list) and data['data']:
             candles = []
             for x in data['data']:
-                try:
-                    candles.append([
-                        int(x[0]),  # timestamp
-                        float(x[1]),  # open
-                        float(x[2]),  # high
-                        float(x[3]),  # low
-                        float(x[4]),  # close
-                        float(x[5]),  # volume (change this to float)
-                    ])
-                except ValueError as ve:
-                    print(f"Conversion error for data: {x}, error: {ve}")
+                # Validate that x contains the expected number of elements
+                if len(x) >= 7:  
+                    try:
+                        timestamp = int(x[0])  # timestamp
+                        open_price = float(x[1])  # open
+                        high_price = float(x[2])  # high
+                        low_price = float(x[3])  # low
+                        close_price = float(x[4])  # close
+                        volume = float(x[5])  # volume
+                        
+                        candles.append([timestamp, open_price, high_price, low_price, close_price, volume])
+                    except ValueError as ve:
+                        print(f"Conversion error for data: {x}, error: {ve}")
+                else:
+                    print(f"Invalid data length for entry: {x}")
+
+            if not candles:
+                print("No valid candles to process.")
             return candles
+
         else:
             print("No valid data found for symbol:", symbol)
             return []
