@@ -42,8 +42,25 @@ def get_kline(symbol, interval, limit=100):
         "limit": limit
     }
     try:
-        res = requests.get(url, params=params, timeout=10).json()
-        return [[float(x[1]), float(x[2]), float(x[3]), float(x[4]), float(x[5]), int(x[0])] for x in res['data']]
+        res = requests.get(url, params=params, timeout=10)
+        res.raise_for_status()  # Check for HTTP errors
+        data = res.json()
+
+        # Debugging: Print the entire response
+        print("API Response for symbol", symbol, ":", data)
+
+        # Check if 'data' is present and valid
+        if 'data' in data and data['data']:
+            candles = []
+            for x in data['data']:
+                try:
+                    candles.append([float(x[1]), float(x[2]), float(x[3]), float(x[4]), float(x[5]), int(x[0])])
+                except ValueError as ve:
+                    print(f"Conversion error for data: {x}, error: {ve}")
+            return candles
+        else:
+            print("No valid data found for symbol:", symbol)
+            return []
     except Exception as e:
         print(f"Kline error for {symbol}:", e)
         return []
