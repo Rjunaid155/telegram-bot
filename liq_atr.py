@@ -76,7 +76,7 @@ def get_kline_v3(symbol, interval, limit=100):
         print(f"Kline request error for {symbol}: {e}")
         return []
 
-if _name_ == "_main_":
+if __name__ == "__main__":
     print("⏳ Scanning Bitget Futures...")
     
     # Define your parameters
