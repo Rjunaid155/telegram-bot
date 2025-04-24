@@ -42,27 +42,39 @@ def get_kline(symbol, interval, limit=100):
         "limit": limit
     }
     try:
-        res = requests.get(url, params=params, timeout=10)
-        res.raise_for_status()  # Check for HTTP errors
-        data = res.json()
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()  # HTTP errors ka check karein
+        data = response.json()
 
-        # Debugging: Print the entire response
+        # Debugging: Print the API response
         print("API Response for symbol", symbol, ":", data)
 
-        # Check if 'data' is present and valid
-        if 'data' in data and data['data']:
+        # Ensure that the API response contains the necessary keys
+        if data.get('code') != '00000':
+            print(f"API Error for {symbol}: {data.get('msg')}")
+            return []
+
+        if 'data' in data and isinstance(data['data'], list) and data['data']:
             candles = []
             for x in data['data']:
                 try:
-                    candles.append([float(x[1]), float(x[2]), float(x[3]), float(x[4]), float(x[5]), int(x[0])])
+                    candles.append([
+                        int(x[0]),  # timestamp
+                        float(x[1]),  # open
+                        float(x[2]),  # high
+                        float(x[3]),  # low
+                        float(x[4]),  # close
+                        int(x[5])  # volume
+                    ])
                 except ValueError as ve:
                     print(f"Conversion error for data: {x}, error: {ve}")
             return candles
         else:
             print("No valid data found for symbol:", symbol)
             return []
-    except Exception as e:
-        print(f"Kline error for {symbol}:", e)
+
+    except requests.exceptions.RequestException as e:
+        print(f"Kline request error for {symbol}: {e}")
         return []
 
 def calculate_rsi(closes, period=14):
