@@ -2,8 +2,7 @@ import requests
 import time
 import datetime
 import os
-import math
-from statistics import mean
+from statistics import mean  # Needed for average calculations
 
 # Telegram config (set in Render env vars)
 BOT_TOKEN = os.getenv("TOKEN")
@@ -65,7 +64,6 @@ def calculate_atr(candles, period=14):
     return round(mean(trs[-period:]), 6)
 
 def calculate_liquidation(entry, side):
-    move = entry * 0.02  # safety buffer
     if side == "LONG":
         return round(entry - ((entry / LEVERAGE) * 0.98), 6)
     else:
@@ -82,10 +80,12 @@ def analyze(symbol):
         last_volume = volumes[-1]
         avg_volume = mean(volumes[-10:-1])
 
-        if rsi >= RSI_OVERBOUGHT and last_volume > avg_volume * VOLUME_SPIKE_MULTIPLIER and (candles[-1][1] - candles[-1][2]) > atr * ATR_MULTIPLIER:
+        body_size = abs(candles[-1][1] - candles[-1][2])
+
+        if rsi >= RSI_OVERBOUGHT and last_volume > avg_volume * VOLUME_SPIKE_MULTIPLIER and body_size > atr * ATR_MULTIPLIER:
             entry = closes[-1]
             liq = calculate_liquidation(entry, "SHORT")
-            alert_time = datetime.datetime.utcfromtimestamp(candles[-1][6]/1000 + sec).strftime("%H:%M:%S")
+            alert_time = datetime.datetime.utcfromtimestamp(candles[-1][5]/1000 + sec).strftime("%H:%M:%S")
             msg = (
                 f"Coin: {symbol}\n"
                 f"Signal: SHORT\n"
@@ -98,10 +98,10 @@ def analyze(symbol):
             send_telegram_alert(msg)
             return
 
-        if rsi <= RSI_OVERSOLD and last_volume > avg_volume * VOLUME_SPIKE_MULTIPLIER and (candles[-1][2] - candles[-1][1]) > atr * ATR_MULTIPLIER:
+        if rsi <= RSI_OVERSOLD and last_volume > avg_volume * VOLUME_SPIKE_MULTIPLIER and body_size > atr * ATR_MULTIPLIER:
             entry = closes[-1]
             liq = calculate_liquidation(entry, "LONG")
-            alert_time = datetime.datetime.utcfromtimestamp(candles[-1][6]/1000 + sec).strftime("%H:%M:%S")
+            alert_time = datetime.datetime.utcfromtimestamp(candles[-1][5]/1000 + sec).strftime("%H:%M:%S")
             msg = (
                 f"Coin: {symbol}\n"
                 f"Signal: LONG\n"
