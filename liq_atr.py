@@ -26,12 +26,17 @@ def send_telegram_alert(msg):
 
 def get_usdt_pairs():
     url = "https://api.bitget.com/api/v2/mix/market/tickers?productType=USDT-FUTURES"
-    headers = {
-        "User-Agent": "Mozilla/5.0"
-    }
-    res = requests.get(url, headers=headers).json()
-    print("USDT Pairs Response:", res)  # Debug
-    return [x['symbol'] for x in res.get('data', [])]
+    try:
+        res = requests.get(url, timeout=10)
+        data = res.json()
+        if data and 'data' in data and isinstance(data['data'], list):
+            return [x['symbol'] for x in data['data']]
+        else:
+            print("Warning: Invalid response or 'data' missing")
+            return []
+    except Exception as e:
+        print("Error in get_usdt_pairs:", e)
+        return []
 
 def get_kline(symbol, interval, limit=100):
     url = f"https://api.bitget.com/api/v2/mix/market/candles"
