@@ -33,50 +33,44 @@ def get_usdt_pairs():
         print("Error fetching pairs:", e)
         return []
 
-def get_kline(symbol, interval, limit=100):
-    url = f"https://api.bitget.com/api/v2/mix/market/candles"
+def get_kline_v3(symbol, interval, limit=100):
+    url = f"https://api.bitget.com/api/v3/mix/market/candles"  # v3 URL
     params = {
         "symbol": symbol,
-        "productType": "USDT-FUTURES",
         "granularity": interval,
         "limit": limit
     }
-    
+
     try:
         response = requests.get(url, params=params, timeout=10)
-        response.raise_for_status()  # Check for HTTP errors
+        response.raise_for_status()
         data = response.json()
 
-        print("API Response for symbol", symbol, ":", data)
-
-        # Ensure that the API response contains the necessary keys
+        print("API Response (v3) for symbol", symbol, ":", data)
+        
+        # Check for error codes in the response
         if data.get('code') != '00000':
             print(f"API Error for {symbol}: {data.get('msg')}")
             return []
 
+        # Assuming the data structure is the same as v2
         if 'data' in data and isinstance(data['data'], list) and data['data']:
             candles = []
             for x in data['data']:
-                # Validate that x contains the expected number of elements
-                if len(x) >= 7:  
+                if len(x) >= 7:  # Validate the length
                     try:
-                        timestamp = int(x[0])  # timestamp
-                        open_price = float(x[1])  # open
-                        high_price = float(x[2])  # high
-                        low_price = float(x[3])  # low
-                        close_price = float(x[4])  # close
-                        volume = float(x[5])  # volume
-                        
+                        timestamp = int(x[0])
+                        open_price = float(x[1])
+                        high_price = float(x[2])
+                        low_price = float(x[3])
+                        close_price = float(x[4])
+                        volume = float(x[5])
+
                         candles.append([timestamp, open_price, high_price, low_price, close_price, volume])
                     except ValueError as ve:
                         print(f"Conversion error for data: {x}, error: {ve}")
-                else:
-                    print(f"Invalid data length for entry: {x}")
 
-            if not candles:
-                print("No valid candles to process.")
             return candles
-
         else:
             print("No valid data found for symbol:", symbol)
             return []
@@ -84,7 +78,6 @@ def get_kline(symbol, interval, limit=100):
     except requests.exceptions.RequestException as e:
         print(f"Kline request error for {symbol}: {e}")
         return []
-
 def calculate_rsi(closes, period=14):
     gains, losses = [], []
     for i in range(1, len(closes)):
