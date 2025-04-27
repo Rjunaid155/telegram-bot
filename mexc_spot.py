@@ -52,16 +52,16 @@ def analyze_coin(symbol):
     avg_volume = statistics.mean(volumes[:-2])
     volume_spike = volumes[-1] > avg_volume * 2
     price_change = ((current_price - previous_close) / previous_close) * 100
-    
-    swing_high = max(closes[-4:-1])
-    higher_high = current_price > swing_high
 
-    if volume_spike and price_change > 2 and higher_high:
+    # swing_high = max(closes[-4:-1])
+    # higher_high = current_price > swing_high
+
+    if volume_spike and price_change > 0.2:
         return {
             'symbol': symbol,
             'price': round(current_price, 5),
-            'tp': round(current_price * 1.08, 5),
-            'sl': round(current_price * 0.975, 5),
+            'tp': round(current_price * 1.05, 5),   # Slightly reduced TP for test
+            'sl': round(current_price * 0.98, 5),
             'change': round(price_change, 2),
             'strength': round((price_change + (volumes[-1]/avg_volume)) * 4, 1)
         }
