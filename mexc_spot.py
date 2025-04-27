@@ -1,5 +1,6 @@
 import requests
 import time
+import os
 import statistics
 from datetime import datetime
 
@@ -35,13 +36,15 @@ def get_klines(symbol, interval='15m', limit=20):
     url = f"{MEXC_BASE_URL}/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
     try:
         return requests.get(url).json()
-    except:
+    except Exception as e:
+        print(f"Kline fetch error for {symbol}: {e}")
         return []
 
 # === ANALYZE COIN ===
 def analyze_coin(symbol):
     klines = get_klines(symbol)
     if not klines or len(klines) < 5:
+        print(f"[SKIP] Not enough klines for {symbol}")
         return None
 
     closes = [float(k[4]) for k in klines]
@@ -53,14 +56,14 @@ def analyze_coin(symbol):
     volume_spike = volumes[-1] > avg_volume * 2
     price_change = ((current_price - previous_close) / previous_close) * 100
 
-    # swing_high = max(closes[-4:-1])
-    # higher_high = current_price > swing_high
+    print(f"[DEBUG] {symbol}: PriceChange={price_change:.2f}%, VolumeSpike={volume_spike}")
 
     if volume_spike and price_change > 0.2:
+        print(f"[ALERT] Strong signal found for {symbol}")
         return {
             'symbol': symbol,
             'price': round(current_price, 5),
-            'tp': round(current_price * 1.05, 5),   # Slightly reduced TP for test
+            'tp': round(current_price * 1.05, 5),
             'sl': round(current_price * 0.98, 5),
             'change': round(price_change, 2),
             'strength': round((price_change + (volumes[-1]/avg_volume)) * 4, 1)
@@ -73,7 +76,9 @@ def main():
     while True:
         try:
             coins = get_spot_symbols()
+            print(f"[INFO] Scanning {len(coins)} coins...")
             for coin in coins:
+                print(f"[SCAN] {coin}")
                 signal = analyze_coin(coin)
                 if signal:
                     msg = f"<b>[SPOT BUY ALERT]</b>\n" \
@@ -83,7 +88,7 @@ def main():
                           f"Stoploss: ${signal['sl']}\n" \
                           f"Strength: {signal['strength']}%\n" \
                           f"Time: {datetime.now().strftime('%H:%M:%S')}\n\n" \
-                          f"Reason: Volume Spike + Higher High"
+                          f"Reason: Volume Spike"
                     send_telegram_alert(msg)
         except Exception as e:
             print(f"Main loop error: {e}")
