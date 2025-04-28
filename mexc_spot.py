@@ -81,8 +81,9 @@ def analyze_symbol(symbol):
         return None
 
     closes_15m = np.array([float(c[4]) for c in candles_15m])
-    closes_1h = np.array([float(c[4]) for c in candles_1h])
-
+   closes_1h = np.array([float(c[4]) for c in candles_1h if len(c) > 4])
+if len(closes_1h) < 20:
+    return None  # Skip weak or incomplete data
     rsi_15m = calculate_rsi(closes_15m)
     rsi_1h = calculate_rsi(closes_1h)
 
