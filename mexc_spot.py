@@ -3,9 +3,10 @@ import time
 import statistics
 from datetime import datetime
 import os
+
 # === CONFIG ===
-TELEGRAM_TOKEN = 'TOKEN'
-CHAT_ID = 'TELEGRAM_CHAT_ID'
+BOT_TOKEN = os.getenv('TOKEN')
+CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 MEXC_BASE_URL = 'https://api.mexc.com'
 ALERT_INTERVAL = 120  # seconds
 
@@ -52,18 +53,18 @@ def analyze_coin(symbol):
     current_price = closes[-1]
     previous_close = closes[-2]
     avg_volume = statistics.mean(volumes[:-2])
-    volume_spike = volumes[-1] > avg_volume * 2
+    volume_spike = volumes[-1] > avg_volume * 1.3  # Relaxed condition
     price_change = ((current_price - previous_close) / previous_close) * 100
 
     print(f"[DEBUG] {symbol}: PriceChange={price_change:.2f}%, VolumeSpike={volume_spike}")
 
-    if volume_spike and price_change > 0.2:
+    if volume_spike and price_change > 0.1:  # Relaxed price movement
         print(f"[ALERT] Strong signal found for {symbol}")
         return {
             'symbol': symbol,
             'price': round(current_price, 5),
-            'tp': round(current_price * 1.05, 5),
-            'sl': round(current_price * 0.98, 5),
+            'tp': round(current_price * 1.04, 5),
+            'sl': round(current_price * 0.985, 5),
             'change': round(price_change, 2),
             'strength': round((price_change + (volumes[-1]/avg_volume)) * 4, 1)
         }
@@ -87,7 +88,7 @@ def main():
                           f"Stoploss: ${signal['sl']}\n" \
                           f"Strength: {signal['strength']}%\n" \
                           f"Time: {datetime.now().strftime('%H:%M:%S')}\n\n" \
-                          f"Reason: Volume Spike"
+                          f"Reason: Volume Spike + Price Action"
                     send_telegram_alert(msg)
         except Exception as e:
             print(f"Main loop error: {e}")
