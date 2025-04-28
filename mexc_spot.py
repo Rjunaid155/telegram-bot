@@ -66,13 +66,10 @@ def analyze_coin(symbol):
     volume_spike = volumes[-1] > avg_volume * 2
     price_change = ((current_price - previous_close) / previous_close) * 100
 
-    green_candle = closes[-1] > closes[-2] and closes[-1] > opens[-1]
-
     strength_score = round((price_change + (volumes[-1]/avg_volume)) * 4, 1)
 
     print(f"[DEBUG] {symbol}: PriceChange={price_change:.2f}%, VolumeSpike={volume_spike}, Strength={strength_score}")
 
-    # Filter condition
     if volume_spike and price_change > 0.3 and strength_score >= 20:
         return {
             'symbol': symbol,
