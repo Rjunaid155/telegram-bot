@@ -1,6 +1,5 @@
 import requests
 import time
-import os
 import hmac
 import hashlib
 import base64
