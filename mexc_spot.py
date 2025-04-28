@@ -12,6 +12,9 @@ ALERT_INTERVAL = 120  # seconds
 
 # === TELEGRAM ALERT ===
 def send_telegram_alert(message):
+    if not BOT_TOKEN or not CHAT_ID:
+        print("Telegram credentials missing!")
+        return
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {'chat_id': CHAT_ID, 'text': message, 'parse_mode': 'HTML'}
     try:
@@ -24,7 +27,12 @@ def get_spot_symbols():
     url = f"{MEXC_BASE_URL}/api/v3/ticker/24hr"
     try:
         res = requests.get(url).json()
-        filtered = [x for x in res if x['symbol'].endswith('USDT') and not x['symbol'].endswith('3SUSDT') and float(x['quoteVolume']) > 500000]
+        filtered = [
+            x for x in res if x['symbol'].endswith('USDT') 
+            and not x['symbol'].endswith('3SUSDT') 
+            and not x['symbol'].endswith('3LUSDT') 
+            and float(x['quoteVolume']) > 500000
+        ]
         sorted_coins = sorted(filtered, key=lambda x: float(x['quoteVolume']), reverse=True)[:50]
         return [x['symbol'] for x in sorted_coins]
     except Exception as e:
@@ -48,31 +56,37 @@ def analyze_coin(symbol):
         return None
 
     closes = [float(k[4]) for k in klines]
+    highs = [float(k[2]) for k in klines]
+    lows = [float(k[3]) for k in klines]
     volumes = [float(k[5]) for k in klines]
 
     current_price = closes[-1]
     previous_close = closes[-2]
     avg_volume = statistics.mean(volumes[:-2])
-    volume_spike = volumes[-1] > avg_volume * 1.3  # Relaxed condition
+    volume_spike = volumes[-1] > avg_volume * 2
     price_change = ((current_price - previous_close) / previous_close) * 100
 
-    print(f"[DEBUG] {symbol}: PriceChange={price_change:.2f}%, VolumeSpike={volume_spike}")
+    green_candle = closes[-1] > closes[-2] and closes[-1] > opens[-1]
 
-    if volume_spike and price_change > 0.1:  # Relaxed price movement
-        print(f"[ALERT] Strong signal found for {symbol}")
+    strength_score = round((price_change + (volumes[-1]/avg_volume)) * 4, 1)
+
+    print(f"[DEBUG] {symbol}: PriceChange={price_change:.2f}%, VolumeSpike={volume_spike}, Strength={strength_score}")
+
+    # Filter condition
+    if volume_spike and price_change > 0.3 and strength_score >= 20:
         return {
             'symbol': symbol,
             'price': round(current_price, 5),
-            'tp': round(current_price * 1.04, 5),
-            'sl': round(current_price * 0.985, 5),
+            'tp': round(current_price * 1.05, 5),
+            'sl': round(current_price * 0.98, 5),
             'change': round(price_change, 2),
-            'strength': round((price_change + (volumes[-1]/avg_volume)) * 4, 1)
+            'strength': strength_score
         }
     return None
 
 # === MAIN LOOP ===
 def main():
-    print("Starting Spot Signal Scanner (MEXC)...")
+    print("Starting Strong Spot Signal Scanner (MEXC)...")
     while True:
         try:
             coins = get_spot_symbols()
@@ -88,7 +102,7 @@ def main():
                           f"Stoploss: ${signal['sl']}\n" \
                           f"Strength: {signal['strength']}%\n" \
                           f"Time: {datetime.now().strftime('%H:%M:%S')}\n\n" \
-                          f"Reason: Volume Spike + Price Action"
+                          f"Reason: Strong Volume Spike + Price Action"
                     send_telegram_alert(msg)
         except Exception as e:
             print(f"Main loop error: {e}")
