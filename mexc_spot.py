@@ -80,10 +80,12 @@ def analyze_symbol(symbol):
     if not candles_15m or not candles_1h:
         return None
 
-    closes_15m = np.array([float(c[4]) for c in candles_15m])
-   closes_1h = np.array([float(c[4]) for c in candles_1h if len(c) > 4])
-if len(closes_1h) < 20:
-    return None  # Skip weak or incomplete data
+    closes_15m = np.array([float(c[4]) for c in candles_15m if len(c) > 4])
+    closes_1h = np.array([float(c[4]) for c in candles_1h if len(c) > 4])
+
+    if len(closes_1h) < 20:
+        return None  # Skip weak or incomplete data
+
     rsi_15m = calculate_rsi(closes_15m)
     rsi_1h = calculate_rsi(closes_1h)
 
@@ -98,6 +100,9 @@ if len(closes_1h) < 20:
 
     orderbook = fetch_orderbook(symbol)
     if not orderbook or 'bids' not in orderbook or 'asks' not in orderbook:
+        return None
+
+    return generate_signal(symbol, orderbook, closes_15m)
         return None
 
     top_bids = sum(float(bid[1]) for bid in orderbook['bids'][:5])
