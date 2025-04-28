@@ -1,151 +1,151 @@
 import requests
 import time
-import statistics
+import pandas as pd
+import numpy as np
+import ta
 from datetime import datetime
 import os
-# === CONFIG ===
-TELEGRAM_TOKEN = 'TOKEN'
-CHAT_ID = 'TELEGRAM_CHAT_ID'
-MEXC_BASE_URL = 'https://api.mexc.com'
-ALERT_INTERVAL = 120  # seconds
-RSI_THRESHOLD = 28  # Oversold threshold
-MIN_STRENGTH = 80  # Minimum signal strength % to allow alert
+# ========== USER SETTINGS ==========
+RSI_OVERSOLD_THRESHOLD = 28
+MIN_STRENGTH_RATING = 85  # % minimum strength
+ATR_MULTIPLIER = 1.5      # Spike confirmation factor
+SCAN_INTERVAL = 30        # seconds between scans
+SYMBOLS_LIMIT = 300       # Max symbols to scan
+MEXC_BASE_URL = "https://api.mexc.com"
 
-# === TELEGRAM ALERT ===
-def send_telegram_alert(message):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    payload = {'chat_id': CHAT_ID, 'text': message, 'parse_mode': 'HTML'}
-    try:
-        requests.post(url, data=payload)
-    except Exception as e:
-        print(f"Telegram error: {e}")
+# Telegram settings (Optional)
+TELEGRAM_TOKEN = "TOKEN"
+CHAT_ID = "TELEGRAM_chat_id"
 
-# === FETCH SYMBOLS ===
-def get_spot_symbols():
+# ========== FUNCTIONS ==========
+
+def fetch_symbols():
     try:
-        res = requests.get(f"{MEXC_BASE_URL}/api/v3/ticker/24hr").json()
-        filtered = [x for x in res if x['symbol'].endswith('USDT') and not x['symbol'].endswith('3SUSDT') and float(x['quoteVolume']) > 300000]
-        sorted_coins = sorted(filtered, key=lambda x: float(x['quoteVolume']), reverse=True)
-        return [x['symbol'] for x in sorted_coins]
+        url = f"{MEXC_BASE_URL}/api/v3/exchangeInfo"
+        res = requests.get(url, timeout=10)
+        data = res.json()
+        symbols = [s['symbol'] for s in data['symbols'] if s['quoteAsset'] == 'USDT' and s['status'] == 'TRADING']
+        return symbols[:SYMBOLS_LIMIT]
     except Exception as e:
-        print(f"Symbol fetch error: {e}")
+        print(f"[ERROR] Symbol fetch error: {e}")
         return []
 
-# === FETCH KLINES ===
-def get_klines(symbol, interval='15m', limit=100):
+def fetch_klines(symbol, interval='15m', limit=100):
     try:
         url = f"{MEXC_BASE_URL}/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
-        return requests.get(url).json()
+        res = requests.get(url, timeout=10)
+        data = res.json()
+        df = pd.DataFrame(data, columns=['time','open','high','low','close','volume','c1','c2','c3','c4','c5'])
+        df['close'] = df['close'].astype(float)
+        df['high'] = df['high'].astype(float)
+        df['low'] = df['low'].astype(float)
+        df['volume'] = df['volume'].astype(float)
+        return df
     except Exception as e:
-        print(f"Kline fetch error for {symbol}: {e}")
-        return []
+        print(f"[ERROR] Kline fetch error {symbol}: {e}")
+        return None
 
-# === CALCULATE RSI ===
-def calculate_rsi(closes, period=14):
-    if len(closes) < period:
-        return 50
-    deltas = [closes[i] - closes[i-1] for i in range(1, len(closes))]
-    gains = [d for d in deltas if d > 0]
-    losses = [-d for d in deltas if d < 0]
-    avg_gain = sum(gains) / period if gains else 0
-    avg_loss = sum(losses) / period if losses else 1
-    rs = avg_gain / avg_loss if avg_loss != 0 else 0
-    rsi = 100 - (100 / (1 + rs))
-    return rsi
+def calculate_indicators(df):
+    df['rsi'] = ta.momentum.RSIIndicator(close=df['close'], window=14).rsi()
+    df['atr'] = ta.volatility.AverageTrueRange(high=df['high'], low=df['low'], close=df['close'], window=14).average_true_range()
+    return df
 
-# === FETCH ORDERBOOK ===
-def get_orderbook(symbol):
+def fetch_orderbook(symbol):
     try:
         url = f"{MEXC_BASE_URL}/api/v3/depth?symbol={symbol}&limit=50"
-        orderbook = requests.get(url).json()
-        bids = orderbook['bids']
-        asks = orderbook['asks']
-        total_bids = sum(float(b[1]) for b in bids)
-        total_asks = sum(float(a[1]) for a in asks)
-        top_bid = float(bids[0][0]) if bids else 0
-        top_ask = float(asks[0][0]) if asks else 0
-        pressure = 'UP' if total_bids > total_asks else 'DOWN'
-        suggested_price = (top_bid + top_ask) / 2
-        return pressure, suggested_price
+        res = requests.get(url, timeout=10)
+        data = res.json()
+        bids = np.array([float(b[1]) for b in data['bids']])
+        asks = np.array([float(a[1]) for a in data['asks']])
+        total_bids = np.sum(bids)
+        total_asks = np.sum(asks)
+        bias = "UP" if total_bids > total_asks * 1.2 else "NEUTRAL"
+        return bias
     except Exception as e:
-        print(f"Orderbook fetch error for {symbol}: {e}")
-        return 'UNKNOWN', 0
+        print(f"[ERROR] Orderbook fetch error {symbol}: {e}")
+        return "UNKNOWN"
 
-# === ANALYZE COIN ===
-def analyze_coin(symbol):
-    klines_15m = get_klines(symbol, '15m')
-    klines_1h = get_klines(symbol, '1h')
-
-    if not klines_15m or not klines_1h:
-        return None
-
-    closes_15m = [float(k[4]) for k in klines_15m]
-    volumes_15m = [float(k[5]) for k in klines_15m]
-    closes_1h = [float(k[4]) for k in klines_1h]
-
-    # Calculate RSIs
-    rsi_15m = calculate_rsi(closes_15m)
-    rsi_1h = calculate_rsi(closes_1h)
-
-    # ATR spike detection
-    price_moves = [abs(closes_15m[i] - closes_15m[i-1]) for i in range(1, len(closes_15m))]
-    atr = statistics.mean(price_moves[-14:]) if len(price_moves) >= 14 else 0
-    last_move = price_moves[-1] if price_moves else 0
-    atr_spike = last_move > atr * 1.5
-
-    # Volume Spike Detection
-    avg_volume = statistics.mean(volumes_15m[:-2]) if len(volumes_15m) > 2 else 0
-    last_volume = volumes_15m[-1]
-    volume_spike = last_volume > avg_volume * 2
-
-    # Orderbook
-    pressure, suggested_price = get_orderbook(symbol)
-
-    # Final Decision
-    strength = 0
-    if rsi_15m < RSI_THRESHOLD and rsi_1h < RSI_THRESHOLD:
-        strength += 40
-    if atr_spike:
-        strength += 30
-    if volume_spike:
-        strength += 20
-    if pressure == 'UP':
-        strength += 10
-
-    print(f"[DEBUG] {symbol}: RSI15m={rsi_15m:.2f}, RSI1h={rsi_1h:.2f}, ATRSpike={atr_spike}, VolumeSpike={volume_spike}, Strength={strength}%")
-
-    if strength >= MIN_STRENGTH:
-        return {
-            'symbol': symbol,
-            'price': round(suggested_price, 5),
-            'tp': round(suggested_price * 1.02, 5),  # Suggest 2% Target
-            'strength': strength
+def send_telegram(message):
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        payload = {
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": message,
+            "parse_mode": "Markdown"
         }
-    else:
-        return None
+        requests.post(url, data=payload)
+    except Exception as e:
+        print(f"[ERROR] Telegram send error: {e}")
 
-# === MAIN LOOP ===
-def main():
+def calculate_strength(rsi_score, atr_score, bias_score):
+    return (rsi_score + atr_score + bias_score) / 3
+
+# ========== MAIN SCANNER ==========
+
+def scan():
     print("Starting Strong Spot Signal Scanner (MEXC)...")
+    symbols = fetch_symbols()
+    print(f"[INFO] Scanning {len(symbols)} coins...")
+
     while True:
-        try:
-            coins = get_spot_symbols()
-            print(f"[INFO] Scanning {len(coins)} coins...")
-            for coin in coins:
-                signal = analyze_coin(coin)
-                if signal:
-                    msg = f"<b>[SPOT BUY ALERT]</b>\n" \
-                          f"Coin: <code>{signal['symbol']}</code>\n" \
-                          f"Suggested Buy Price: <b>${signal['price']}</b>\n" \
-                          f"Suggested Target: <b>${signal['tp']}</b>\n" \
-                          f"Signal Strength: <b>{signal['strength']}%</b>\n" \
-                          f"Time: {datetime.now().strftime('%H:%M:%S')}\n\n" \
-                          f"Reason: Strong Oversold Zone + Volume Spike + ATR Spike + Orderbook Pressure"
-                    send_telegram_alert(msg)
-        except Exception as e:
-            print(f"Main loop error: {e}")
+        for symbol in symbols:
+            try:
+                df_15m = fetch_klines(symbol, '15m')
+                df_1h = fetch_klines(symbol, '1h')
 
-        time.sleep(ALERT_INTERVAL)
+                if df_15m is None or df_1h is None:
+                    continue
 
-if __name__ == '__main__':
-    main()
+                df_15m = calculate_indicators(df_15m)
+                df_1h = calculate_indicators(df_1h)
+
+                latest_rsi_15m = df_15m['rsi'].iloc[-1]
+                latest_rsi_1h = df_1h['rsi'].iloc[-1]
+
+                latest_atr_15m = df_15m['atr'].iloc[-1]
+                current_close = df_15m['close'].iloc[-1]
+                previous_close = df_15m['close'].iloc[-2]
+
+                # Conditions
+                rsi_condition = (latest_rsi_15m <= RSI_OVERSOLD_THRESHOLD) and (latest_rsi_1h <= RSI_OVERSOLD_THRESHOLD)
+                atr_condition = (current_close - previous_close) >= (latest_atr_15m * ATR_MULTIPLIER)
+
+                if rsi_condition:
+                    bias = fetch_orderbook(symbol)
+                    bias_score = 100 if bias == "UP" else 50
+
+                    # Strength calculation
+                    rsi_score = 100 - latest_rsi_15m  # lower RSI -> stronger buy signal
+                    atr_score = min(100, (current_close - previous_close) / latest_atr_15m * 100)
+
+                    strength = calculate_strength(rsi_score, atr_score, bias_score)
+
+                    if strength >= MIN_STRENGTH_RATING:
+                        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+                        # TP Calculation
+                        tp1 = round(current_close * 1.004, 4)
+                        tp2 = round(current_close * 1.007, 4)
+
+                        message = f"🔥 Strong Buy Signal 🔥\n\n"\
+                                  f"Symbol: {symbol}\n"\
+                                  f"Entry Price: {current_close}\n"\
+                                  f"TP1: {tp1}\n"\
+                                  f"TP2: {tp2}\n"\
+                                  f"Strength: {strength:.2f}%\n"\
+                                  f"Orderbook Bias: {bias}\n"\
+                                  f"Time: {now}"
+
+                        print(message)
+                        # Uncomment below to enable Telegram alerts
+                        # send_telegram(message)
+
+            except Exception as e:
+                print(f"[SCAN ERROR] {symbol}: {e}")
+
+        time.sleep(SCAN_INTERVAL)
+
+# ========== RUN ==========
+
+if __name__ == "__main__":
+    scan()
