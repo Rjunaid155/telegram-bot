@@ -1,156 +1,137 @@
-import os
-import time
 import requests
 import numpy as np
-import traceback
+import time
+import os
+from ta.momentum import RSIIndicator
 from datetime import datetime
-from statistics import mean
 
-# Environment Variables
-TELEGRAM_TOKEN = os.getenv('TOKEN')
-CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+TELEGRAM_TOKEN = os.getenv("TOKEN")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MEXC_API_BASE = 'https://api.mexc.com'
-SCAN_INTERVAL = 15  # seconds
+HEADERS = {
+    'Accept': 'application/json',
+    'User-Agent': 'Mozilla/5.0'
+}
 
-# Functions
-def send_telegram_message(message):
-    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        print("Telegram not configured properly.")
-        return
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {'chat_id': TELEGRAM_CHAT_ID, 'text': message, 'parse_mode': 'Markdown'}
-    try:
-        requests.post(url, data=payload)
-    except Exception as e:
-        print(f"Telegram send error: {e}")
+BASE_URL = "https://api.mexc.com"
+
+
+def send_telegram_alert(message):
+    if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        data = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
+        try:
+            requests.post(url, data=data)
+        except:
+            pass
+
 
 def fetch_symbols():
     try:
-        response = requests.get(f"{MEXC_API_BASE}/api/v3/exchangeInfo", timeout=5)
-        symbols = [s['symbol'] for s in response.json()['symbols'] if s['quoteAsset'] == 'USDT' and s['isSpotTradingAllowed']]
-        return symbols
-    except Exception as e:
-        print(f"Symbol fetch error: {e}")
-        return []
-
-def fetch_kline(symbol, interval='15m', limit=50):
-    try:
-        response = requests.get(f"{MEXC_API_BASE}/api/v3/klines", params={'symbol': symbol, 'interval': interval, 'limit': limit}, timeout=5)
-        return response.json()
+        url = f"{BASE_URL}/api/v3/exchangeInfo"
+        res = requests.get(url, headers=HEADERS, timeout=10)
+        data = res.json()
+        return [s['symbol'] for s in data['symbols'] if s['quoteAsset'] == 'USDT' and s['status'] == 'TRADING']
     except:
         return []
 
-def fetch_orderbook(symbol, limit=50):
-    try:
-        response = requests.get(f"{MEXC_API_BASE}/api/v3/depth", params={'symbol': symbol, 'limit': limit}, timeout=5)
-        return response.json()
-    except:
-        return {}
 
-def calculate_rsi(closes, period=14):
-    deltas = np.diff(closes)
-    seed = deltas[:period]
-    up = seed[seed >= 0].sum() / period
-    down = -seed[seed < 0].sum() / period
-    rs = up / down if down != 0 else 0
-    rsi = np.zeros_like(closes)
-    rsi[:period] = 100. - 100. / (1. + rs)
-    for i in range(period, len(closes)):
-        delta = deltas[i - 1]
-        upval = max(delta, 0)
-        downval = -min(delta, 0)
-        up = (up * (period - 1) + upval) / period
-        down = (down * (period - 1) + downval) / period
-        rs = up / down if down != 0 else 0
-        rsi[i] = 100. - 100. / (1. + rs)
-    return rsi
+def fetch_kline(symbol, interval, limit=50):
+    try:
+        url = f"{BASE_URL}/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
+        res = requests.get(url, headers=HEADERS, timeout=10)
+        return res.json()
+    except:
+        return []
+
+
+def fetch_orderbook(symbol):
+    try:
+        url = f"{BASE_URL}/api/v3/depth?symbol={symbol}&limit=5"
+        res = requests.get(url, headers=HEADERS, timeout=10)
+        return res.json()
+    except:
+        return None
+
+
+def calculate_rsi(close_prices, period=14):
+    if len(close_prices) < period:
+        return []
+    rsi = RSIIndicator(close=close_prices, window=period)
+    return rsi.rsi().values
+
 
 def detect_spike(candles):
-    closes = np.array([float(c[4]) for c in candles])
-    atr = np.mean(np.abs(np.diff(closes)))
-    last_candle = closes[-1]
-    prev_close = closes[-2]
-    move = abs(last_candle - prev_close)
-    return move > 1.2 * atr
+    try:
+        last_candle = candles[-1]
+        prev_candle = candles[-2]
+        last_close = float(last_candle[4])
+        prev_close = float(prev_candle[4])
+        change_pct = (last_close - prev_close) / prev_close * 100
+        return abs(change_pct) >= 1.0
+    except:
+        return False
+
 
 def analyze_symbol(symbol):
     candles_15m = fetch_kline(symbol, '15m', 50)
     candles_1h = fetch_kline(symbol, '1h', 50)
+
     if not candles_15m or not candles_1h:
         return None
 
-    closes_15m = np.array([float(c[4]) for c in candles_15m if len(c) > 4])
-    closes_1h = np.array([float(c[4]) for c in candles_1h if len(c) > 4])
+    try:
+        closes_15m = np.array([float(c[4]) for c in candles_15m if len(c) > 4])
+        closes_1h = np.array([float(c[4]) for c in candles_1h if len(c) > 4])
+        if len(closes_1h) < 20:
+            return None
 
-    if len(closes_1h) < 20:
-        return None  # Skip weak or incomplete data
+        rsi_15m = calculate_rsi(closes_15m)
+        rsi_1h = calculate_rsi(closes_1h)
 
-    rsi_15m = calculate_rsi(closes_15m)
-    rsi_1h = calculate_rsi(closes_1h)
+        last_rsi_15m = rsi_15m[-1] if len(rsi_15m) > 0 else 100
+        last_rsi_1h = rsi_1h[-1] if len(rsi_1h) > 0 else 100
 
-    last_rsi_15m = rsi_15m[-1]
-    last_rsi_1h = rsi_1h[-1]
+        if last_rsi_15m > 30 or last_rsi_1h > 35:
+            return None
 
-    if last_rsi_15m > 30 or last_rsi_1h > 35:
+        if not detect_spike(candles_15m):
+            return None
+
+        orderbook = fetch_orderbook(symbol)
+        if not orderbook or 'bids' not in orderbook or 'asks' not in orderbook:
+            return None
+
+        top_bid = float(orderbook['bids'][0][0])
+        top_ask = float(orderbook['asks'][0][0])
+        mark_price = (top_bid + top_ask) / 2
+
+        suggestion = f"Buy zone: {top_bid:.4f} - {top_ask:.4f}"
+        tp_zone = f"Target: {mark_price * 1.015:.4f}"
+
+        message = f"[SPOT SIGNAL] {symbol}\nRSI 15m: {last_rsi_15m:.2f}, RSI 1h: {last_rsi_1h:.2f}\n{suggestion}\n{tp_zone}"
+        send_telegram_alert(message)
+
+        return True
+
+    except Exception as e:
+        print(f"Analysis error for {symbol}: {e}")
         return None
 
-    if not detect_spike(candles_15m):
-        return None
 
-    orderbook = fetch_orderbook(symbol)
-    if not orderbook or 'bids' not in orderbook or 'asks' not in orderbook:
-        return None
-
-    return generate_signal(symbol, orderbook, closes_15m)
-        return None
-
-    top_bids = sum(float(bid[1]) for bid in orderbook['bids'][:5])
-    top_asks = sum(float(ask[1]) for ask in orderbook['asks'][:5])
-
-    if top_bids < top_asks * 1.1:
-        return None
-
-    last_price = float(candles_15m[-1][4])
-    entry_min = last_price * 0.998
-    entry_max = last_price * 1.001
-
-    tp1 = last_price * 1.012
-    tp2 = last_price * 1.018
-
-    message = f"""Spot Signal - Strong Buy
-
-Coin: {symbol}
-Entry Range: {entry_min:.6f} - {entry_max:.6f}
-Target 1 (TP1): {tp1:.6f}
-Target 2 (TP2): {tp2:.6f}
-Orderbook Strength: Strong
-Timeframes: 15min + 1H Confirmed
-Protection: Dynamic SL below entry
-
-#MEXC #Spot #Signal
-"""
-
-    return message
-
-# Main
 def main():
     print("Starting Strong Spot Signal Scanner (MEXC)...")
     symbols = fetch_symbols()
     print(f"[INFO] {len(symbols)} coins loaded.")
-
     while True:
-        try:
-            for symbol in symbols:
-                signal = analyze_symbol(symbol)
-                if signal:
-                    print(f"[ALERT] Signal detected for {symbol}")
-                    send_telegram_message(signal)
-                time.sleep(1)
-        except Exception as e:
-            print(f"Main loop error: {e}")
-            traceback.print_exc()
-            time.sleep(5)
+        for symbol in symbols:
+            try:
+                analyze_symbol(symbol)
+                time.sleep(1.2)
+            except Exception as e:
+                print(f"Main loop error: {e}")
+        time.sleep(60)
+
 
 if __name__ == "__main__":
     main()
