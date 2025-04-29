@@ -15,6 +15,11 @@ def fetch_all_symbols():
         url = 'https://api.mexc.com/api/v3/exchangeInfo'
         response = requests.get(url, timeout=10)
         data = response.json()
+
+        # DEBUG: Print first few items to inspect structure
+        print("[DEBUG] Sample response keys:", list(data.keys()))
+        print("[DEBUG] First 3 symbols:", data.get('symbols', [])[:3])
+
         symbols = [s['symbol'] for s in data['symbols'] if s['quoteAsset'] == 'USDT' and s['status'] == 'TRADING']
         return symbols
     except Exception as e:
