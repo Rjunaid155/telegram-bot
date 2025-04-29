@@ -1,58 +1,68 @@
 import requests
-import pandas as pd
 import time
+import pandas as pd
+import ta
+import os
+import telegram
 
-# Telegram bot setup
-TOKEN = 'TOKEN'
-CHAT_ID = 'TELEGRAM_CHAT_ID'
+# Load env variables
+MEXC_API_URL = "https://api.mexc.com"
+TELEGRAM_TOKEN = os.getenv("TOKEN")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+bot = telegram.Bot(token=TELEGRAM_TOKEN)
 
-def send_telegram_message(message):
-    url = f'https://api.telegram.org/bot{TOKEN}/sendMessage'
-    payload = {'chat_id': CHAT_ID, 'text': message}
-    requests.post(url, data=payload)
+def get_all_symbols():
+    url = f"{MEXC_API_URL}/api/v3/exchangeInfo"
+    try:
+        res = requests.get(url, timeout=10)
+        symbols = [s['symbol'] for s in res.json()['symbols'] if s['quoteAsset'] == 'USDT']
+        return symbols
+    except Exception as e:
+        print(f"Failed to fetch symbols: {e}")
+        return []
 
-def get_ohlcv(symbol, interval='15m', limit=100):
-    url = f"https://api.mexc.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
-    response = requests.get(url)
-    data = response.json()
+def get_klines(symbol, interval='15m', limit=100):
+    url = f"{MEXC_API_URL}/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
+    try:
+        res = requests.get(url, timeout=10)
+        data = res.json()
+        df = pd.DataFrame(data, columns=[
+            'timestamp', 'open', 'high', 'low', 'close', 'volume',
+            'close_time', 'quote_asset_volume', 'num_trades',
+            'taker_buy_base', 'taker_buy_quote', 'ignore'
+        ])
+        df['close'] = df['close'].astype(float)
+        return df
+    except Exception as e:
+        print(f"Error fetching data for {symbol}: {e}")
+        return None
 
-    # Adjusted column list for MEXC 8-element data
-    df = pd.DataFrame(data, columns=[
-        'timestamp', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'turnover'
-    ])
-    df['close'] = df['close'].astype(float)
-    return df
+def analyze_rsi(symbol):
+    df = get_klines(symbol)
+    if df is None or df.empty:
+        return
 
-def calculate_rsi(data, period=14):
-    delta = data['close'].diff()
-    gain = delta.where(delta > 0, 0.0)
-    loss = -delta.where(delta < 0, 0.0)
-    avg_gain = gain.rolling(window=period).mean()
-    avg_loss = loss.rolling(window=period).mean()
-    rs = avg_gain / avg_loss
-    rsi = 100 - (100 / (1 + rs))
-    return rsi
+    df['rsi'] = ta.momentum.RSIIndicator(df['close'], window=14).rsi()
+    latest_rsi = df['rsi'].iloc[-1]
+    last_close = df['close'].iloc[-1]
 
-def trade(symbol, interval='15m', threshold_buy=30, threshold_sell=70):
-    df = get_ohlcv(symbol, interval)
-    df['RSI'] = calculate_rsi(df)
-
-    current_rsi = df['RSI'].iloc[-1]
-    price = df['close'].iloc[-1]
-
-    if current_rsi <= threshold_buy:
-        message = f"[LONG SIGNAL]\nSymbol: {symbol}\nRSI: {round(current_rsi,2)}\nPrice: {price}"
-        send_telegram_message(message)
-
-    elif current_rsi >= threshold_sell:
-        message = f"[SHORT SIGNAL]\nSymbol: {symbol}\nRSI: {round(current_rsi,2)}\nPrice: {price}"
-        send_telegram_message(message)
-    else:
-        print("No strong signal yet.")
+    if 20 <= latest_rsi <= 25:
+        suggestion = f"BUY signal for {symbol}\nPrice: {last_close}\nRSI: {latest_rsi:.2f}\nSuggested entries: {last_close*0.997:.3f} - {last_close*1.003:.3f}"
+        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=suggestion)
+    elif 80 <= latest_rsi <= 90:
+        suggestion = f"SHORT signal for {symbol}\nPrice: {last_close}\nRSI: {latest_rsi:.2f}\nSuggested entries: {last_close*1.003:.3f} - {last_close*0.997:.3f}"
+        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=suggestion)
 
 def main():
-    # Example symbol: BTCUSDT (MEXC format)
-    trade('BTCUSDT', interval='15m', threshold_buy=30, threshold_sell=70)
+    while True:
+        print("Scanning...")
+        symbols = get_all_symbols()
+        for symbol in symbols:
+            if symbol.endswith("USDT"):
+                analyze_rsi(symbol)
+                time.sleep(0.3)  # avoid rate limit
+        print("Waiting 3 minutes...")
+        time.sleep(180)  # wait before next scan
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
