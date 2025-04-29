@@ -2,7 +2,8 @@ import requests
 import numpy as np
 import time
 import os
-from ta.momentum import RSIIndicator
+from ta.momentum
+import RSIIndicator
 from datetime import datetime
 
 TELEGRAM_TOKEN = os.getenv("TOKEN")
