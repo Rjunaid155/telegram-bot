@@ -4,6 +4,7 @@ requests
 numpy==1.26.4
 pandas
 pandas_ta
+ta
 python-telegram-bot
 python-bitcoinrpc
 pymysql
