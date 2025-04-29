@@ -2,7 +2,7 @@ import time
 import pandas as pd
 import numpy as np
 from binance.client import Client
-import talib
+import ta
 from telegram import Bot
 
 # Binance API keys
