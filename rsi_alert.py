@@ -61,10 +61,10 @@ def analyze_rsi(symbol):
 
     if 20 <= latest_rsi <= 25:
         suggestion = f"BUY signal for {symbol}\nPrice: {last_close}\nRSI: {latest_rsi:.2f}\nSuggested entries: {last_close*0.997:.3f} - {last_close*1.003:.3f}"
-        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=suggestion)
+        bot.send_message(CHAT_ID=TELEGRAM_CHAT_ID, text=suggestion)
     elif 80 <= latest_rsi <= 90:
         suggestion = f"SHORT signal for {symbol}\nPrice: {last_close}\nRSI: {latest_rsi:.2f}\nSuggested entries: {last_close*1.003:.3f} - {last_close*0.997:.3f}"
-        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=suggestion)
+        bot.send_message(CHAT_ID=TELEGRAM_CHAT_ID, text=suggestion)
 
 def main():
     while True:
