@@ -92,7 +92,7 @@ def analyze_symbol(symbol):
 
     print(f"[DEBUG] {symbol}: RSI 15m = {last_rsi_15m:.2f}, RSI 1h = {last_rsi_1h:.2f}")
 
-    if last_rsi_15m > 30 or last_rsi_1h > 35:
+    if last_rsi_15m > 40 or last_rsi_1h > 45:
         print(f"[DEBUG] {symbol}: RSI not oversold")
         return None
 
