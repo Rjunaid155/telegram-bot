@@ -62,41 +62,50 @@ def detect_spike(candles, threshold=1.0):
         return False
 
 def analyze_symbol(symbol):
-    candles_15m = fetch_kline(symbol, '15m')
-    candles_1h = fetch_kline(symbol, '1h')
+    candles_15m = fetch_kline(symbol, '15m', 50)
+    candles_1h = fetch_kline(symbol, '1h', 50)
 
-   if not candles_15m or not candles_1h:
-    print(f"[DEBUG] {symbol}: Missing candles")
-    return None
+    if not candles_15m or not candles_1h:
+        print(f"[DEBUG] {symbol}: Missing candles")
+        return None
 
-if len(closes_1h) < 20:
-    print(f"[DEBUG] {symbol}: Not enough 1h candles")
-    return None
+    closes_15m = np.array([float(c[4]) for c in candles_15m if len(c) > 4])
+    closes_1h = np.array([float(c[4]) for c in candles_1h if len(c) > 4])
 
-if last_rsi_15m > 30 or last_rsi_1h > 35:
-    print(f"[DEBUG] {symbol}: RSI too high (15m={last_rsi_15m}, 1h={last_rsi_1h})")
-    return None
+    if len(closes_1h) < 20:
+        print(f"[DEBUG] {symbol}: Not enough 1h candles")
+        return None
+
+    rsi_15m = calculate_rsi(closes_15m)
+    rsi_1h = calculate_rsi(closes_1h)
 
     last_rsi_15m = rsi_15m[-1]
     last_rsi_1h = rsi_1h[-1]
 
-    print(f"[DEBUG] {symbol}: RSI 15m = {last_rsi_15m:.2f}, RSI 1h = {last_rsi_1h:.2f}")
+    print(f"[DEBUG] {symbol}: RSI_15m={last_rsi_15m:.2f}, RSI_1h={last_rsi_1h:.2f}")
 
-    if last_rsi_15m > 40 or last_rsi_1h > 45:
-        print(f"[DEBUG] {symbol}: RSI not oversold")
+    if last_rsi_15m > 30 or last_rsi_1h > 35:
+        print(f"[DEBUG] {symbol}: RSI too high (15m={last_rsi_15m:.2f}, 1h={last_rsi_1h:.2f})")
         return None
 
     if not detect_spike(candles_15m):
         print(f"[DEBUG] {symbol}: No spike detected")
         return None
 
-    # All conditions passed
-    return {
-        "symbol": symbol,
-        "rsi_15m": round(last_rsi_15m, 2),
-        "rsi_1h": round(last_rsi_1h, 2)
-    }
+    orderbook = fetch_orderbook(symbol)
+    if not orderbook or 'bids' not in orderbook or 'asks' not in orderbook:
+        print(f"[DEBUG] {symbol}: Orderbook data missing")
+        return None
 
+    if not detect_orderbook_imbalance(orderbook):
+        print(f"[DEBUG] {symbol}: No orderbook imbalance")
+        return None
+
+    return {
+        'symbol': symbol,
+        'rsi_15m': last_rsi_15m,
+        'rsi_1h': last_rsi_1h
+    }
 def send_telegram_alert(signal):
     msg = f"""[STRONG SPOT SIGNAL]
 Symbol: {signal['symbol']}
