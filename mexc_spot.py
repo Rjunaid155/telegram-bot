@@ -5,6 +5,7 @@ from ta.momentum import RSIIndicator
 from datetime import datetime
 import pytz
 import telebot
+import os
 
 # --- CONFIG ---
 API_URL = "https://api.mexc.com"
@@ -13,7 +14,7 @@ CHAT_ID = "TELEGRAM_CHAT_ID"
 INTERVAL_15M = "15m"
 INTERVAL_1H = "1h"
 
-bot = telebot.TeleBot(TELEGRAM_TOKEN)
+bot = telebot.TeleBot(TOKEN)
 
 def send_alert(message):
     bot.send_message(CHAT_ID, message)
