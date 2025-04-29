@@ -1,81 +1,58 @@
-import time
 import requests
 import pandas as pd
-import numpy as np
-import ta
-from telegram import Bot
-import os
+import time
 
-# Telegram setup
-telegram_token = os.environ.get("TOKEN")  # Set on Render
-chat_id = os.environ.get("TELEGRAM_CHAT_ID")
-
-bot = Bot(token=telegram_token)
+# Telegram bot setup
+TOKEN = 'TOKEN'
+CHAT_ID = 'TELEGRAM_CHAT_ID'
 
 def send_telegram_message(message):
-    bot.send_message(chat_id=chat_id, text=message)
+    url = f'https://api.telegram.org/bot{TOKEN}/sendMessage'
+    payload = {'chat_id': CHAT_ID, 'text': message}
+    requests.post(url, data=payload)
 
-# Function to fetch historical data from MEXC
 def get_ohlcv(symbol, interval='15m', limit=100):
     url = f"https://api.mexc.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
     response = requests.get(url)
     data = response.json()
+
+    # Adjusted column list for MEXC 8-element data
     df = pd.DataFrame(data, columns=[
-        'time', 'open', 'high', 'low', 'close', 'volume',
-        'close_time', 'quote_asset_volume', 'number_of_trades',
-        'taker_buy_base_volume', 'taker_buy_quote_volume', 'ignore'
+        'timestamp', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'turnover'
     ])
-    df['high'] = df['high'].astype(float)
-    df['low'] = df['low'].astype(float)
     df['close'] = df['close'].astype(float)
     return df
 
-# Indicators
-def get_rsi(df):
-    rsi = ta.momentum.RSIIndicator(close=df['close'], window=14)
-    return rsi.rsi().iloc[-1]
+def calculate_rsi(data, period=14):
+    delta = data['close'].diff()
+    gain = delta.where(delta > 0, 0.0)
+    loss = -delta.where(delta < 0, 0.0)
+    avg_gain = gain.rolling(window=period).mean()
+    avg_loss = loss.rolling(window=period).mean()
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
 
-def get_atr(df):
-    atr = ta.volatility.AverageTrueRange(
-        high=df['high'], low=df['low'], close=df['close'], window=14)
-    return atr.average_true_range().iloc[-1]
-
-def get_sma(df):
-    sma = ta.trend.SMAIndicator(close=df['close'], window=50)
-    return sma.sma_indicator().iloc[-1]
-
-def trade(symbol='BTCUSDT', interval='15m', threshold_buy=10, threshold_sell=90):
+def trade(symbol, interval='15m', threshold_buy=30, threshold_sell=70):
     df = get_ohlcv(symbol, interval)
-    rsi = get_rsi(df)
-    atr = get_atr(df)
-    sma = get_sma(df)
-    last_price = df['close'].iloc[-1]
-    entry_price_suggestion = last_price + atr if rsi < threshold_buy else last_price - atr
+    df['RSI'] = calculate_rsi(df)
 
-    print(f"{symbol} | RSI: {rsi:.2f} | SMA: {sma:.2f} | ATR: {atr:.2f} | Last Price: {last_price:.2f}")
+    current_rsi = df['RSI'].iloc[-1]
+    price = df['close'].iloc[-1]
 
-    # Buy signal
-    if rsi < threshold_buy and last_price > sma:
-        msg = f"BUY SIGNAL for {symbol} | RSI: {rsi:.2f}\nEntry: {entry_price_suggestion:.2f}"
-        send_telegram_message(msg)
-        print("Buy Signal Sent")
+    if current_rsi <= threshold_buy:
+        message = f"[LONG SIGNAL]\nSymbol: {symbol}\nRSI: {round(current_rsi,2)}\nPrice: {price}"
+        send_telegram_message(message)
 
-    # Sell signal
-    elif rsi > threshold_sell and last_price < sma:
-        msg = f"SELL SIGNAL for {symbol} | RSI: {rsi:.2f}\nEntry: {entry_price_suggestion:.2f}"
-        send_telegram_message(msg)
-        print("Sell Signal Sent")
+    elif current_rsi >= threshold_sell:
+        message = f"[SHORT SIGNAL]\nSymbol: {symbol}\nRSI: {round(current_rsi,2)}\nPrice: {price}"
+        send_telegram_message(message)
     else:
-        print("No signal")
-
-# List of altcoins (MEXC supports only selected symbols)
-altcoins = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'ADAUSDT']  # You can expand this
+        print("No strong signal yet.")
 
 def main():
-    while True:
-        for symbol in altcoins:
-            trade(symbol, interval='15m', threshold_buy=10, threshold_sell=90)
-        time.sleep(60)
+    # Example symbol: BTCUSDT (MEXC format)
+    trade('BTCUSDT', interval='15m', threshold_buy=30, threshold_sell=70)
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
