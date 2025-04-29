@@ -1,136 +1,138 @@
 import requests
-import time
 import numpy as np
+import time
 from ta.momentum import RSIIndicator
-import telegram
-import os
+import pandas as pd
 
-# Environment variables
-TELEGRAM_TOKEN = os.getenv("TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-bot = telegram.Bot(token=TELEGRAM_TOKEN)
+TELEGRAM_TOKEN = 'TOKEN'
+CHAT_ID = 'TELEGRAM_CHAT_ID'
 
-def fetch_all_symbols():
+def send_telegram_message(message):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    data = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
     try:
-        url = 'https://api.mexc.com/api/v3/exchangeInfo'
-        response = requests.get(url, timeout=10)
+        requests.post(url, data=data)
+    except Exception as e:
+        print(f"[ERROR] Telegram Error: {e}")
+
+def fetch_symbols():
+    try:
+        url = "https://api.mexc.com/api/v3/exchangeInfo"
+        response = requests.get(url)
         data = response.json()
-
-        # Debug hata sakte ho ab
-        # print("[DEBUG] Sample response keys:", list(data.keys()))
-        # print("[DEBUG] First 3 symbols:", data.get('symbols', [])[:3])
-
-        symbols = [s['symbol'] for s in data['symbols'] if s['quoteAsset'] == 'USDT' and s['isSpotTradingAllowed']]
+        symbols = [s['symbol'] for s in data['symbols']
+                   if s['quoteAsset'] == 'USDT' and s['isSpotTradingAllowed']]
+        print(f"[INFO] {len(symbols)} coins loaded.")
         return symbols
     except Exception as e:
-        print("[ERROR] Symbol fetch error:", e)
+        print(f"[ERROR] Symbol Fetch Error: {e}")
         return []
 
-def fetch_kline(symbol, interval='15m', limit=50):
+def fetch_kline(symbol, interval, limit=50):
     try:
-        url = f'https://api.mexc.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}'
-        response = requests.get(url, timeout=10)
-        data = response.json()
-
+        url = f"https://api.mexc.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
+        res = requests.get(url)
+        data = res.json()
         if isinstance(data, list) and len(data) > 0:
             return data
         else:
-            print(f"[DEBUG] {symbol}: No candle data for interval {interval}")
             return None
-    except Exception as e:
-        print(f"[ERROR] {symbol}: Failed to fetch candles ({interval}) => {e}")
+    except:
         return None
 
 def calculate_rsi(closes, period=14):
-    try:
-        indicator = RSIIndicator(close=pd.Series(closes), window=period)
-        return indicator.rsi().values
-    except Exception as e:
-        print("[ERROR] RSI calculation error:", e)
-        return []
+    if len(closes) < period:
+        return np.array([])
+    return RSIIndicator(pd.Series(closes), window=period).rsi().values
 
-def detect_spike(candles, threshold=1.0):
+def detect_spike(candles):
     try:
         if len(candles) < 2:
             return False
-        last_close = float(candles[-2][4])
-        current_close = float(candles[-1][4])
-        change = ((current_close - last_close) / last_close) * 100
-        return abs(change) >= threshold
-    except Exception as e:
-        print("[ERROR] Spike detection failed:", e)
+        current = float(candles[-1][4])
+        previous = float(candles[-2][4])
+        change = (current - previous) / previous * 100
+        return change >= 1
+    except:
+        return False
+
+def fetch_orderbook(symbol):
+    try:
+        url = f"https://api.mexc.com/api/v3/depth?symbol={symbol}&limit=20"
+        res = requests.get(url)
+        return res.json()
+    except:
+        return None
+
+def detect_orderbook_imbalance(orderbook):
+    try:
+        bids = sum(float(b[1]) for b in orderbook['bids'])
+        asks = sum(float(a[1]) for a in orderbook['asks'])
+        return bids > asks * 1.5
+    except:
         return False
 
 def analyze_symbol(symbol):
     candles_15m = fetch_kline(symbol, '15m', 50)
     candles_1h = fetch_kline(symbol, '1h', 50)
 
-    if not candles_15m or not candles_1h:
-        print(f"[DEBUG] {symbol}: Missing candles")
+    if not candles_15m:
+        print(f"[DEBUG] {symbol}: Missing 15m candles")
         return None
 
-    closes_15m = np.array([float(c[4]) for c in candles_15m if len(c) > 4])
-    closes_1h = np.array([float(c[4]) for c in candles_1h if len(c) > 4])
-
-    if len(closes_1h) < 20:
-        print(f"[DEBUG] {symbol}: Not enough 1h candles")
-        return None
-
+    closes_15m = np.array([float(c[4]) for c in candles_15m])
     rsi_15m = calculate_rsi(closes_15m)
-    rsi_1h = calculate_rsi(closes_1h)
-
+    if len(rsi_15m) == 0:
+        return None
     last_rsi_15m = rsi_15m[-1]
-    last_rsi_1h = rsi_1h[-1]
 
-    print(f"[DEBUG] {symbol}: RSI_15m={last_rsi_15m:.2f}, RSI_1h={last_rsi_1h:.2f}")
+    rsi_1h_text = "MISSING"
+    rsi_1h_val = None
+    signal_type = "Partial"
 
-    if last_rsi_15m > 30 or last_rsi_1h > 35:
-        print(f"[DEBUG] {symbol}: RSI too high (15m={last_rsi_15m:.2f}, 1h={last_rsi_1h:.2f})")
+    if candles_1h and len(candles_1h) >= 20:
+        closes_1h = np.array([float(c[4]) for c in candles_1h])
+        rsi_1h = calculate_rsi(closes_1h)
+        if len(rsi_1h) > 0:
+            rsi_1h_val = rsi_1h[-1]
+            rsi_1h_text = f"{rsi_1h_val:.2f}"
+            signal_type = "Full"
+
+    if last_rsi_15m > 25:
+        return None
+    if rsi_1h_val and rsi_1h_val > 35:
         return None
 
     if not detect_spike(candles_15m):
-        print(f"[DEBUG] {symbol}: No spike detected")
         return None
 
     orderbook = fetch_orderbook(symbol)
-    if not orderbook or 'bids' not in orderbook or 'asks' not in orderbook:
-        print(f"[DEBUG] {symbol}: Orderbook data missing")
+    if not orderbook or not detect_orderbook_imbalance(orderbook):
         return None
 
-    if not detect_orderbook_imbalance(orderbook):
-        print(f"[DEBUG] {symbol}: No orderbook imbalance")
-        return None
+    print(f"[DEBUG] {symbol}: RSI_15m={last_rsi_15m:.2f}, RSI_1h={rsi_1h_text}, Type={signal_type}")
 
     return {
         'symbol': symbol,
-        'rsi_15m': last_rsi_15m,
-        'rsi_1h': last_rsi_1h
+        'rsi_15m': round(last_rsi_15m, 2),
+        'rsi_1h': rsi_1h_text,
+        'type': signal_type
     }
-def send_telegram_alert(signal):
-    msg = f"""[STRONG SPOT SIGNAL]
-Symbol: {signal['symbol']}
-RSI 15m: {signal['rsi_15m']}
-RSI 1h: {signal['rsi_1h']}
-"""
-    try:
-        bot.send_message(chat_id=CHAT_ID, text=msg)
-        print(f"[ALERT SENT] {signal['symbol']}")
-    except Exception as e:
-        print("[ERROR] Telegram send failed:", e)
 
-def main():
+def main_loop():
     print("Starting Strong Spot Signal Scanner (MEXC)...")
-    symbols = fetch_all_symbols()
-    print(f"[INFO] {len(symbols)} coins loaded.")
+    symbols = fetch_symbols()
     for symbol in symbols:
         try:
-            signal = analyze_symbol(symbol)
-            if signal:
-                send_telegram_alert(signal)
-            time.sleep(0.4)
+            result = analyze_symbol(symbol)
+            if result:
+                msg = (f"[SPOT BUY] Symbol: {result['symbol']} | RSI 15m: {result['rsi_15m']} | "
+                       f"RSI 1h: {result['rsi_1h']} | Spike + OB Confirmed | Type: {result['type']}")
+                send_telegram_message(msg)
         except Exception as e:
-            print("[ERROR]", e)
+            print(f"[ERROR] {symbol}: {e}")
 
 if __name__ == "__main__":
-    import pandas as pd
-    main()
+    while True:
+        main_loop()
+        time.sleep(300)  # run every 5 minutes
