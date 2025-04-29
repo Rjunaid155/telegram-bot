@@ -65,27 +65,17 @@ def analyze_symbol(symbol):
     candles_15m = fetch_kline(symbol, '15m')
     candles_1h = fetch_kline(symbol, '1h')
 
-    if not candles_15m or not candles_1h:
-        print(f"[DEBUG] {symbol}: Candle data missing")
-        return None
+   if not candles_15m or not candles_1h:
+    print(f"[DEBUG] {symbol}: Missing candles")
+    return None
 
-    try:
-        closes_15m = np.array([float(c[4]) for c in candles_15m if len(c) > 4])
-        closes_1h = np.array([float(c[4]) for c in candles_1h if len(c) > 4])
-    except Exception as e:
-        print(f"[DEBUG] {symbol}: Close parsing failed — {e}")
-        return None
+if len(closes_1h) < 20:
+    print(f"[DEBUG] {symbol}: Not enough 1h candles")
+    return None
 
-    if len(closes_15m) < 20 or len(closes_1h) < 20:
-        print(f"[DEBUG] {symbol}: Insufficient candle length")
-        return None
-
-    rsi_15m = calculate_rsi(closes_15m)
-    rsi_1h = calculate_rsi(closes_1h)
-
-    if len(rsi_15m) < 1 or len(rsi_1h) < 1:
-        print(f"[DEBUG] {symbol}: RSI data incomplete")
-        return None
+if last_rsi_15m > 30 or last_rsi_1h > 35:
+    print(f"[DEBUG] {symbol}: RSI too high (15m={last_rsi_15m}, 1h={last_rsi_1h})")
+    return None
 
     last_rsi_15m = rsi_15m[-1]
     last_rsi_1h = rsi_1h[-1]
