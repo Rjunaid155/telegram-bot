@@ -9,7 +9,7 @@ import telegram
 MEXC_API_URL = "https://api.mexc.com"
 TELEGRAM_TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-bot = telegram.Bot(token=TELEGRAM_TOKEN)
+bot = telegram.Bot(TELEGRAM_TOKEN)
 
 def get_all_symbols():
     url = f"{MEXC_API_URL}/api/v3/exchangeInfo"
