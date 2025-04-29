@@ -26,11 +26,24 @@ def get_klines(symbol, interval='15m', limit=100):
     try:
         res = requests.get(url, timeout=10)
         data = res.json()
-        df = pd.DataFrame(data, columns=[
-            'timestamp', 'open', 'high', 'low', 'close', 'volume',
-            'close_time', 'quote_asset_volume', 'num_trades',
-            'taker_buy_base', 'taker_buy_quote', 'ignore'
-        ])
+        if not isinstance(data, list):
+            return None
+        df = pd.DataFrame(data)
+        if df.shape[1] == 12:
+            df.columns = [
+                'timestamp', 'open', 'high', 'low', 'close', 'volume',
+                'close_time', 'quote_asset_volume', 'num_trades',
+                'taker_buy_base', 'taker_buy_quote', 'ignore'
+            ]
+        elif df.shape[1] == 8:
+            df.columns = [
+                'timestamp', 'open', 'high', 'low', 'close', 'volume',
+                'close_time', 'quote_asset_volume'
+            ]
+        else:
+            print(f"Unexpected column count for {symbol}: {df.shape[1]}")
+            return None
+
         df['close'] = df['close'].astype(float)
         return df
     except Exception as e:
