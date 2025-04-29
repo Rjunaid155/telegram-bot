@@ -22,4 +22,4 @@ matplotlib
 cryptography
 schedule
 flask
-
+python-binance
