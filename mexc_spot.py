@@ -16,11 +16,11 @@ def fetch_all_symbols():
         response = requests.get(url, timeout=10)
         data = response.json()
 
-        # DEBUG: Print first few items to inspect structure
-        print("[DEBUG] Sample response keys:", list(data.keys()))
-        print("[DEBUG] First 3 symbols:", data.get('symbols', [])[:3])
+        # Debug hata sakte ho ab
+        # print("[DEBUG] Sample response keys:", list(data.keys()))
+        # print("[DEBUG] First 3 symbols:", data.get('symbols', [])[:3])
 
-        symbols = [s['symbol'] for s in data['symbols'] if s['quoteAsset'] == 'USDT' and s['status'] == 'TRADING']
+        symbols = [s['symbol'] for s in data['symbols'] if s['quoteAsset'] == 'USDT' and s['isSpotTradingAllowed']]
         return symbols
     except Exception as e:
         print("[ERROR] Symbol fetch error:", e)
