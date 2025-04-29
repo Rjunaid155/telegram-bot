@@ -57,22 +57,27 @@ def detect_spike(candles):
     change = ((last_close - prev_close) / prev_close) * 100
     return abs(change) > 1
 
+def is_float(value):
+    try:
+        float(value)
+        return True
+    except:
+        return False
+
 def analyze_symbol(symbol):
     candles_15m = fetch_kline(symbol, '15m', 50)
     candles_1h = fetch_kline(symbol, '1h', 50)
     if not candles_15m or not candles_1h:
         return None
 
-    closes_15m = np.array([float(c[4]) for c in candles_15m if len(c) > 4])
-    closes_1h = np.array([float(c[4]) for c in candles_1h if len(c) > 4])
+    closes_15m = np.array([float(c[4]) for c in candles_15m if len(c) > 4 and is_float(c[4])])
+    closes_1h = np.array([float(c[4]) for c in candles_1h if len(c) > 4 and is_float(c[4])])
+
     if len(closes_1h) < 20:
-        return None
+        return None  # Skip weak or incomplete data
 
     rsi_15m = calculate_rsi(closes_15m)
     rsi_1h = calculate_rsi(closes_1h)
-
-    if len(rsi_15m) == 0 or len(rsi_1h) == 0:
-        return None
 
     last_rsi_15m = rsi_15m[-1]
     last_rsi_1h = rsi_1h[-1]
@@ -87,22 +92,17 @@ def analyze_symbol(symbol):
     if not orderbook or 'bids' not in orderbook or 'asks' not in orderbook:
         return None
 
-    bid_volume = sum(float(b[1]) for b in orderbook['bids'])
-    ask_volume = sum(float(a[1]) for a in orderbook['asks'])
-
-    if bid_volume <= ask_volume:
+    strength = calculate_strength(orderbook)
+    if strength < 0.55:
         return None
-
-    # Target price suggestion
-    best_bid_price = float(orderbook['bids'][0][0])
-    tp_price = best_bid_price * 1.005  # Example: 0.5% Target
 
     return {
         'symbol': symbol,
-        'entry_price': best_bid_price,
-        'target_price': tp_price
+        'rsi_15m': last_rsi_15m,
+        'rsi_1h': last_rsi_1h,
+        'strength': strength,
+        'orderbook': orderbook
     }
-
 def main():
     print("Starting Strong Spot Signal Scanner (MEXC)...")
     all_symbols = fetch_all_symbols()
