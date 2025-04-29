@@ -31,10 +31,15 @@ def fetch_kline(symbol, interval='15m', limit=50):
         url = f'https://api.mexc.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}'
         response = requests.get(url, timeout=10)
         data = response.json()
-        return data if isinstance(data, list) else []
+
+        if isinstance(data, list) and len(data) > 0:
+            return data
+        else:
+            print(f"[DEBUG] {symbol}: No candle data for interval {interval}")
+            return None
     except Exception as e:
-        print(f"[ERROR] Failed to fetch candles for {symbol}: {e}")
-        return []
+        print(f"[ERROR] {symbol}: Failed to fetch candles ({interval}) => {e}")
+        return None
 
 def calculate_rsi(closes, period=14):
     try:
