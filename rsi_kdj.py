@@ -17,17 +17,21 @@ def get_futures_symbols():
     response = requests.get(url)
     if response.status_code == 200:
         data = response.json()["data"]
-        return [pair["symbol"].replace("_UMCBL", "") for pair in data]
+        return [pair["symbol"].replace("_UMCBL", "") for pair in data if "symbol" in pair]
     else:
         print("Failed to fetch symbols:", response.text)
         return []
 
 # Klines fetcher
 def get_klines(symbol, interval, limit=100):
-    url = f"https://api.bitget.com/api/mix/v1/market/candles?symbol={symbol}_UMCBL&granularity={interval}&limit={limit}"
+    full_symbol = f"{symbol}_UMCBL"
+    url = f"https://api.bitget.com/api/mix/v1/market/candles?symbol={full_symbol}&granularity={interval}&limit={limit}"
     response = requests.get(url)
     if response.status_code == 200:
-        data = response.json()["data"]
+        data = response.json().get("data", [])
+        if not data:
+            print(f"{symbol}: Empty kline data received.")
+            return None
         df = pd.DataFrame(data, columns=[
             "timestamp", "open", "high", "low", "close", "volume", "quoteVol"
         ])
@@ -50,22 +54,29 @@ def check_indicators(symbol, timeframe):
     df.ta.kdj(append=True)
 
     latest = df.iloc[-1]
-    rsi = latest["RSI_14"]
-    j = latest["J_9_3_3"]
+    rsi = latest.get("RSI_14", None)
+    j = latest.get("J_9_3_3", None)
+
+    if rsi is None or j is None:
+        print(f"{symbol}: RSI or KDJ J missing.")
+        return
 
     if rsi <= 20 and j <= 10:
-        msg = f"🔻 {symbol} ({timeframe}s) OVERSOLD Signal\nRSI: {rsi:.2f}\nKDJ J: {j:.2f}"
+        msg = f"🔻 {symbol} ({int(timeframe)//60}m) OVERSOLD Signal\nRSI: {rsi:.2f}\nKDJ J: {j:.2f}"
         bot.send_message(CHAT_ID, msg)
     elif rsi >= 80 and j >= 90:
-        msg = f"🚀 {symbol} ({timeframe}s) OVERBOUGHT Signal\nRSI: {rsi:.2f}\nKDJ J: {j:.2f}"
+        msg = f"🚀 {symbol} ({int(timeframe)//60}m) OVERBOUGHT Signal\nRSI: {rsi:.2f}\nKDJ J: {j:.2f}"
         bot.send_message(CHAT_ID, msg)
 
 # Main
-if __name__ == "__main__":
+if __name_ == "__main__":
     symbols = get_futures_symbols()
     timeframes = ["900", "3600"]  # 15m and 1h
 
     for symbol in symbols:
         for tf in timeframes:
-            check_indicators(symbol, tf)
-            time.sleep(2)  # Delay to avoid API rate limit
+            try:
+                check_indicators(symbol, tf)
+                time.sleep(2)
+            except Exception as e:
+                print(f"Error checking {symbol} ({tf}):", e)
