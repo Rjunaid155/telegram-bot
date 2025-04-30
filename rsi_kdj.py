@@ -2,14 +2,12 @@ import os
 import time
 import requests
 import pandas as pd
-import numpy as np
 from ta.momentum import RSIIndicator
 from ta.momentum import StochasticOscillator
 import telegram
 
-# Environment variables
 TELEGRAM_TOKEN = os.getenv("TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 bot = telegram.Bot(token=TELEGRAM_TOKEN)
 
 MEXC_BASE_URL = "https://api.mexc.com"
@@ -41,11 +39,6 @@ def calculate_indicators(df):
     df['kdj_j'] = 3 * df['kdj_k'] - 2 * df['kdj_d']
     return df
 
-def check_volume_spike(df):
-    avg_vol = df['volume'][:-1].tail(10).mean()
-    last_vol = df['volume'].iloc[-1]
-    return last_vol > 1.5 * avg_vol
-
 def analyze(symbol):
     try:
         df = get_klines(symbol)
@@ -53,30 +46,29 @@ def analyze(symbol):
 
         rsi = df['rsi'].iloc[-1]
         j_line = df['kdj_j'].iloc[-1]
-        volume_spike = check_volume_spike(df)
         price = df['close'].iloc[-1]
 
         signal = None
-        if rsi >= 80 and j_line >= 80:
+        if rsi >= 80 and j_line >= 85:
             signal = "Strong SHORT"
-        elif rsi <= 20 and j_line <= 20:
+        elif rsi <= 25 and j_line <= 20:
             signal = "Strong LONG"
 
-        if signal and volume_spike:
-            entry_range = f"Entry Range: {round(price*0.995, 4)} - {round(price*1.005, 4)}"
+        if signal:
+            entry_range = f"{round(price*0.995, 4)} - {round(price*1.005, 4)}"
             tp = round(price * (0.985 if signal == "Strong SHORT" else 1.015), 4)
             sl = round(price * (1.015 if signal == "Strong SHORT" else 0.985), 4)
 
             msg = (
                 f"{signal} Signal Detected for {symbol}\n"
-                f"Price: {price}\n{entry_range}\nTP: {tp} | SL: {sl}\n"
+                f"Current Price: {price}\n"
+                f"Entry Range: {entry_range}\nTP: {tp} | SL: {sl}\n"
                 f"RSI: {round(rsi,2)} | KDJ-J: {round(j_line,2)}"
             )
-            bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg)
+            bot.send_message(CHAT_ID=TELEGRAM_CHAT_ID, text=msg)
     except Exception as e:
         print(f"Error analyzing {symbol}: {e}")
 
-# Extra Debug Function
 def analyze_rsi(symbol):
     try:
         df = get_klines(symbol)
@@ -95,9 +87,9 @@ def analyze_rsi(symbol):
 
         print(f"{symbol} | RSI: {latest_rsi:.2f} | K: {latest_k:.2f} | D: {latest_d:.2f}")
 
-        if latest_rsi < 25 and latest_k < 25 and latest_d < 25:
+        if latest_rsi < 25 and latest_k < 20 and latest_d < 20:
             print(f"Debug BUY signal for {symbol}")
-        elif latest_rsi > 80 and latest_k > 80 and latest_d > 80:
+        elif latest_rsi > 80 and latest_k > 85 and latest_d > 85:
             print(f"Debug SHORT signal for {symbol}")
         else:
             print(f"No debug signal for {symbol}")
@@ -112,7 +104,7 @@ def main():
         for symbol in symbols:
             time.sleep(0.6)
             analyze(symbol)
-            analyze_rsi(symbol)  # Debug function call
+            analyze_rsi(symbol)  # Optional debug
         print("Scan complete. Sleeping 3 minutes...")
         time.sleep(180)
 
