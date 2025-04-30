@@ -69,7 +69,7 @@ def check_indicators(symbol, timeframe):
         bot.send_message(CHAT_ID, msg)
 
 # Main
-if __name_ == "__main__":
+if __name__ == "__main__":
     symbols = get_futures_symbols()
     timeframes = ["900", "3600"]  # 15m and 1h
 
