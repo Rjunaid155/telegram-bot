@@ -1,112 +1,71 @@
-import os
-import time
 import requests
+import time
+import os
+import telebot
 import pandas as pd
-from ta.momentum import RSIIndicator
-from ta.momentum import StochasticOscillator
-import telegram
+import pandas_ta as ta
+from datetime import datetime
 
+# Telegram setup
 TELEGRAM_TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-bot = telegram.Bot(token=TELEGRAM_TOKEN)
+bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
-MEXC_BASE_URL = "https://api.mexc.com"
-
-def get_all_usdt_symbols():
-    url = f"{MEXC_BASE_URL}/api/v3/exchangeInfo"
-    resp = requests.get(url)
-    data = resp.json()
-    symbols = [s['symbol'] for s in data['symbols'] if s['quoteAsset'] == 'USDT' and s['status'] == 'TRADING']
-    return symbols
-
-def get_klines(symbol, interval='15m', limit=100):
-    url = f"{MEXC_BASE_URL}/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
+# Get all UMCBL trading pairs (Futures)
+def get_futures_symbols():
+    url = "https://api.bitget.com/api/mix/v1/market/contracts?productType=umcbl"
     response = requests.get(url)
-    data = response.json()
-    df = pd.DataFrame(data, columns=[
-        'timestamp', 'open', 'high', 'low', 'close', 'volume',
-        'close_time', 'quote_asset_volume', 'number_of_trades',
-        'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore'
-    ])
-    df = df[['open', 'high', 'low', 'close', 'volume']].astype(float)
-    return df
+    if response.status_code == 200:
+        data = response.json()["data"]
+        return [pair["symbol"].replace("_UMCBL", "") for pair in data]
+    else:
+        print("Failed to fetch symbols:", response.text)
+        return []
 
-def calculate_indicators(df):
-    df['rsi'] = RSIIndicator(close=df['close'], window=14).rsi()
-    kdj = StochasticOscillator(high=df['high'], low=df['low'], close=df['close'], window=14, smooth_window=3)
-    df['kdj_k'] = kdj.stoch()
-    df['kdj_d'] = kdj.stoch_signal()
-    df['kdj_j'] = 3 * df['kdj_k'] - 2 * df['kdj_d']
-    return df
+# Klines fetcher
+def get_klines(symbol, interval, limit=100):
+    url = f"https://api.bitget.com/api/mix/v1/market/candles?symbol={symbol}_UMCBL&granularity={interval}&limit={limit}"
+    response = requests.get(url)
+    if response.status_code == 200:
+        data = response.json()["data"]
+        df = pd.DataFrame(data, columns=[
+            "timestamp", "open", "high", "low", "close", "volume", "quoteVol"
+        ])
+        df = df.iloc[::-1]
+        df["close"] = df["close"].astype(float)
+        df["high"] = df["high"].astype(float)
+        df["low"] = df["low"].astype(float)
+        return df
+    else:
+        print(f"{symbol} failed:", response.text)
+        return None
 
-def analyze(symbol):
-    try:
-        df = get_klines(symbol)
-        df = calculate_indicators(df)
+# Indicator check
+def check_indicators(symbol, timeframe):
+    df = get_klines(symbol, timeframe)
+    if df is None or len(df) < 30:
+        return
 
-        rsi = df['rsi'].iloc[-1]
-        j_line = df['kdj_j'].iloc[-1]
-        price = df['close'].iloc[-1]
+    df.ta.rsi(length=14, append=True)
+    df.ta.kdj(append=True)
 
-        signal = None
-        if rsi >= 80 and j_line >= 85:
-            signal = "Strong SHORT"
-        elif rsi <= 25 and j_line <= 20:
-            signal = "Strong LONG"
+    latest = df.iloc[-1]
+    rsi = latest["RSI_14"]
+    j = latest["J_9_3_3"]
 
-        if signal:
-            entry_range = f"{round(price*0.995, 4)} - {round(price*1.005, 4)}"
-            tp = round(price * (0.985 if signal == "Strong SHORT" else 1.015), 4)
-            sl = round(price * (1.015 if signal == "Strong SHORT" else 0.985), 4)
+    if rsi <= 20 and j <= 10:
+        msg = f"🔻 {symbol} ({timeframe}s) OVERSOLD Signal\nRSI: {rsi:.2f}\nKDJ J: {j:.2f}"
+        bot.send_message(CHAT_ID, msg)
+    elif rsi >= 80 and j >= 90:
+        msg = f"🚀 {symbol} ({timeframe}s) OVERBOUGHT Signal\nRSI: {rsi:.2f}\nKDJ J: {j:.2f}"
+        bot.send_message(CHAT_ID, msg)
 
-            msg = (
-                f"{signal} Signal Detected for {symbol}\n"
-                f"Current Price: {price}\n"
-                f"Entry Range: {entry_range}\nTP: {tp} | SL: {sl}\n"
-                f"RSI: {round(rsi,2)} | KDJ-J: {round(j_line,2)}"
-            )
-            bot.send_message(CHAT_ID=TELEGRAM_CHAT_ID, text=msg)
-    except Exception as e:
-        print(f"Error analyzing {symbol}: {e}")
-
-def analyze_rsi(symbol):
-    try:
-        df = get_klines(symbol)
-        if df is None or df.empty:
-            print(f"Skipping {symbol}: No data")
-            return
-
-        df['rsi'] = RSIIndicator(close=df['close'], window=14).rsi()
-        kdj = StochasticOscillator(high=df['high'], low=df['low'], close=df['close'], window=14, smooth_window=3)
-        df['kdj_k'] = kdj.stoch()
-        df['kdj_d'] = kdj.stoch_signal()
-
-        latest_rsi = df['rsi'].iloc[-1]
-        latest_k = df['kdj_k'].iloc[-1]
-        latest_d = df['kdj_d'].iloc[-1]
-
-        print(f"{symbol} | RSI: {latest_rsi:.2f} | K: {latest_k:.2f} | D: {latest_d:.2f}")
-
-        if latest_rsi < 25 and latest_k < 20 and latest_d < 20:
-            print(f"Debug BUY signal for {symbol}")
-        elif latest_rsi > 80 and latest_k > 85 and latest_d > 85:
-            print(f"Debug SHORT signal for {symbol}")
-        else:
-            print(f"No debug signal for {symbol}")
-
-    except Exception as e:
-        print(f"Error in debug for {symbol}: {str(e)}")
-
-def main():
-    while True:
-        print("Scanning...")
-        symbols = get_all_usdt_symbols()
-        for symbol in symbols:
-            time.sleep(0.6)
-            analyze(symbol)
-            analyze_rsi(symbol)  # Optional debug
-        print("Scan complete. Sleeping 3 minutes...")
-        time.sleep(180)
-
+# Main
 if __name__ == "__main__":
-    main()
+    symbols = get_futures_symbols()
+    timeframes = ["900", "3600"]  # 15m and 1h
+
+    for symbol in symbols:
+        for tf in timeframes:
+            check_indicators(symbol, tf)
+            time.sleep(2)  # Delay to avoid API rate limit
