@@ -14,14 +14,12 @@ bot = telegram.Bot(token=TELEGRAM_TOKEN)
 
 MEXC_BASE_URL = "https://api.mexc.com"
 
-
 def get_all_usdt_symbols():
     url = f"{MEXC_BASE_URL}/api/v3/exchangeInfo"
     resp = requests.get(url)
     data = resp.json()
     symbols = [s['symbol'] for s in data['symbols'] if s['quoteAsset'] == 'USDT' and s['status'] == 'TRADING']
     return symbols
-
 
 def get_klines(symbol, interval='15m', limit=100):
     url = f"{MEXC_BASE_URL}/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
@@ -35,7 +33,6 @@ def get_klines(symbol, interval='15m', limit=100):
     df = df[['open', 'high', 'low', 'close', 'volume']].astype(float)
     return df
 
-
 def calculate_indicators(df):
     df['rsi'] = RSIIndicator(close=df['close'], window=14).rsi()
     kdj = StochasticOscillator(high=df['high'], low=df['low'], close=df['close'], window=14, smooth_window=3)
@@ -44,12 +41,10 @@ def calculate_indicators(df):
     df['kdj_j'] = 3 * df['kdj_k'] - 2 * df['kdj_d']
     return df
 
-
 def check_volume_spike(df):
     avg_vol = df['volume'][:-1].tail(10).mean()
     last_vol = df['volume'].iloc[-1]
     return last_vol > 1.5 * avg_vol
-
 
 def analyze(symbol):
     try:
@@ -81,17 +76,45 @@ def analyze(symbol):
     except Exception as e:
         print(f"Error analyzing {symbol}: {e}")
 
+# Extra Debug Function
+def analyze_rsi(symbol):
+    try:
+        df = get_klines(symbol)
+        if df is None or df.empty:
+            print(f"Skipping {symbol}: No data")
+            return
+
+        df['rsi'] = RSIIndicator(close=df['close'], window=14).rsi()
+        kdj = StochasticOscillator(high=df['high'], low=df['low'], close=df['close'], window=14, smooth_window=3)
+        df['kdj_k'] = kdj.stoch()
+        df['kdj_d'] = kdj.stoch_signal()
+
+        latest_rsi = df['rsi'].iloc[-1]
+        latest_k = df['kdj_k'].iloc[-1]
+        latest_d = df['kdj_d'].iloc[-1]
+
+        print(f"{symbol} | RSI: {latest_rsi:.2f} | K: {latest_k:.2f} | D: {latest_d:.2f}")
+
+        if latest_rsi < 25 and latest_k < 25 and latest_d < 25:
+            print(f"Debug BUY signal for {symbol}")
+        elif latest_rsi > 80 and latest_k > 80 and latest_d > 80:
+            print(f"Debug SHORT signal for {symbol}")
+        else:
+            print(f"No debug signal for {symbol}")
+
+    except Exception as e:
+        print(f"Error in debug for {symbol}: {str(e)}")
 
 def main():
     while True:
         print("Scanning...")
         symbols = get_all_usdt_symbols()
         for symbol in symbols:
-            time.sleep(0.6)  # Prevent rate limit
+            time.sleep(0.6)
             analyze(symbol)
+            analyze_rsi(symbol)  # Debug function call
         print("Scan complete. Sleeping 3 minutes...")
         time.sleep(180)
-
 
 if __name__ == "__main__":
     main()
