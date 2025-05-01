@@ -10,14 +10,13 @@ import ta
 # ENV Variables
 TELEGRAM_TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
 # RSI Calculation
 def calculate_rsi(series, period=14):
     return ta.momentum.RSIIndicator(series, period=period).rsi()
 
-# KDJ Calculation (J value)
+# KDJ Calculation (only J)
 def calculate_kdj(df, period=14):
     low_min = df['low'].rolling(period).min()
     high_max = df['high'].rolling(period).max()
@@ -27,28 +26,15 @@ def calculate_kdj(df, period=14):
     j = 3 * k - 2 * d
     return j
 
-# Fetch all available futures symbols from MEXC
-def fetch_symbols():
-    url = "https://contract.mexc.com/api/v1/contract/detail"
-    response = requests.get(url)
-    if response.status_code == 200:
-        res_json = response.json()
-        symbols = [item['symbol'] for item in res_json['data']]
-        return symbols
-    else:
-        print("Failed to fetch symbol list")
-        return []
-
-# Fetch 15m candles
+# Fetch 15m Candles from MEXC Futures
 def fetch_candles(symbol, limit=50):
     url = f"https://contract.mexc.com/api/v1/contract/kline/{symbol}?interval=15m&limit={limit}"
     response = requests.get(url)
     if response.status_code == 200:
-        res_json = response.json()
-        if 'data' not in res_json or not res_json['data']:
+        data = response.json().get('data', [])
+        if not data:
             print(f"Skipping {symbol}: No candle data")
             return None
-        data = res_json['data']
         df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
         df = df.astype({'open': 'float', 'high': 'float', 'low': 'float', 'close': 'float', 'volume': 'float'})
         df = df.iloc[::-1].reset_index(drop=True)
@@ -57,15 +43,47 @@ def fetch_candles(symbol, limit=50):
         print(f"Skipping {symbol}: {response.text}")
         return None
 
+# Fetch all symbols from MEXC Futures
+def fetch_symbols():
+    url = "https://contract.mexc.com/api/v1/contract/detail"
+    response = requests.get(url)
+    if response.status_code == 200:
+        data = response.json().get('data', [])
+        return [item['symbol'] for item in data]
+    else:
+        print("Failed to fetch symbol list")
+        return []
+
+# Filter active symbols (with candle data)
+def filter_active_symbols(symbols):
+    active_symbols = []
+    for symbol in symbols:
+        url = f"https://contract.mexc.com/api/v1/contract/kline/{symbol}?interval=15m&limit=1"
+        response = requests.get(url)
+        if response.status_code == 200:
+            res_json = response.json()
+            if 'data' in res_json and res_json['data']:
+                active_symbols.append(symbol)
+        time.sleep(0.05)  # prevent hitting rate limit
+    return active_symbols
+
 # Send Telegram Alert
 def send_alert(message):
     bot.send_message(CHAT_ID, message)
 
 # Main Signal Function
 def check_short_signals():
-    pairs = fetch_symbols()  # Get all available pairs
+    print("Fetching symbols...")
+    pairs = fetch_symbols()
+    if not pairs:
+        print("No pairs fetched, exiting.")
+        return
 
-    for symbol in pairs:
+    print("Filtering active symbols...")
+    active_pairs = filter_active_symbols(pairs)
+    print(f"Active symbols found: {len(active_pairs)}")
+
+    for symbol in active_pairs:
         df = fetch_candles(symbol)
         if df is None or len(df) < 20:
             continue
@@ -96,8 +114,8 @@ def check_short_signals():
             )
             send_alert(message)
 
-# Run forever
+# Continuous Run
 if __name__ == "__main__":
     while True:
         check_short_signals()
-        time.sleep(300)
+        time.sleep(300)  # Check every 5 minutes
