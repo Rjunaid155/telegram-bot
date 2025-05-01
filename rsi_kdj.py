@@ -4,11 +4,11 @@ import pandas_ta as ta
 import requests
 from datetime import datetime
 import os
-# Telegram Config
+# Telegram config
 TELEGRAM_TOKEN = 'TOKEN'
 CHAT_ID = 'TELEGRAM_CHAT_ID'
 
-# MEXC init
+# MEXC Exchange
 exchange = ccxt.mexc()
 
 def send_telegram(message):
@@ -25,11 +25,11 @@ def fetch_ohlcv(pair, timeframe='15m', limit=50):
         print(f"Error fetching {pair}: {str(e)}")
         return None
 
-def check_high_probability_pairs():
+def check_simple_signals():
     markets = exchange.load_markets()
     PAIR_LIST = [symbol for symbol in markets if 'USDT' in symbol and '/USDT' in symbol]
 
-    high_prob_pairs = []
+    found_pairs = []
 
     for pair in PAIR_LIST:
         df_15m = fetch_ohlcv(pair, '15m')
@@ -44,19 +44,21 @@ def check_high_probability_pairs():
 
         latest = df_15m.iloc[-1]
 
-        if latest['rsi'] <= 30 and latest['J'] <= 20:
-            high_prob_pairs.append(pair)
+        # Easy condition: RSI <= 50 and J <= 50
+        if latest['rsi'] <= 50 and latest['J'] <= 50:
+            print(f"{pair} -> RSI: {latest['rsi']:.2f}, J: {latest['J']:.2f}")
+            found_pairs.append(pair)
 
-    if high_prob_pairs:
-        message = f"🚨 High Probability Coins (15m Oversold RSI & KDJ) 🚨\n\n"
-        for p in high_prob_pairs:
+    if found_pairs:
+        message = f"🟢 Signal Coins (Easy Mode)\n\n"
+        for p in found_pairs:
             message += f"- {p}\n"
         message += f"\nTime: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
 
         print(message)
         send_telegram(message)
     else:
-        print("No high probability coins found.")
+        print("No signals found.")
 
-# Run scanner
-check_high_probability_pairs()
+# Run simple scanner
+check_simple_signals()
