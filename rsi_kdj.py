@@ -17,7 +17,7 @@ bot = telebot.TeleBot(TELEGRAM_TOKEN)
 def calculate_rsi(series, period=14):
     return ta.momentum.RSIIndicator(series, period=period).rsi()
 
-# KDJ (J value)
+# KDJ Calculation (J value)
 def calculate_kdj(df, period=14):
     low_min = df['low'].rolling(period).min()
     high_max = df['high'].rolling(period).max()
@@ -27,45 +27,45 @@ def calculate_kdj(df, period=14):
     j = 3 * k - 2 * d
     return j
 
-# Fetch all USDT pairs from MEXC Futures
+# Fetch all available futures symbols from MEXC
 def fetch_symbols():
     url = "https://contract.mexc.com/api/v1/contract/detail"
     response = requests.get(url)
     if response.status_code == 200:
-        data = response.json()['data']
-        symbols = [item['symbol'] for item in data if item['quoteCoin'] == 'USDT']
+        res_json = response.json()
+        symbols = [item['symbol'] for item in res_json['data']]
         return symbols
     else:
-        print("Error fetching symbols:", response.text)
+        print("Failed to fetch symbol list")
         return []
 
-# Fetch candles for symbol
+# Fetch 15m candles
 def fetch_candles(symbol, limit=50):
     url = f"https://contract.mexc.com/api/v1/contract/kline/{symbol}?interval=15m&limit={limit}"
     response = requests.get(url)
     if response.status_code == 200:
         res_json = response.json()
-        if 'data' in res_json and res_json['data']:
-            data = res_json['data']
-            df = pd.DataFrame(data, columns=['timestamp','open','high','low','close','volume','turnover'])
-            df = df.astype({'open':'float','high':'float','low':'float','close':'float','volume':'float'})
-            df = df.iloc[::-1].reset_index(drop=True)
-            return df
-        else:
+        if 'data' not in res_json or not res_json['data']:
             print(f"Skipping {symbol}: No candle data")
             return None
+        data = res_json['data']
+        df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+        df = df.astype({'open': 'float', 'high': 'float', 'low': 'float', 'close': 'float', 'volume': 'float'})
+        df = df.iloc[::-1].reset_index(drop=True)
+        return df
     else:
         print(f"Skipping {symbol}: {response.text}")
         return None
+
 # Send Telegram Alert
 def send_alert(message):
     bot.send_message(CHAT_ID, message)
 
 # Main Signal Function
 def check_short_signals():
-    symbols = fetch_symbols()
+    pairs = fetch_symbols()  # Get all available pairs
 
-    for symbol in symbols:
+    for symbol in pairs:
         df = fetch_candles(symbol)
         if df is None or len(df) < 20:
             continue
@@ -96,7 +96,8 @@ def check_short_signals():
             )
             send_alert(message)
 
-# Continuous Run
-while True:
-    check_short_signals()
-    time.sleep(300)  # 5 minutes
+# Run forever
+if __name__ == "__main__":
+    while True:
+        check_short_signals()
+        time.sleep(300)
