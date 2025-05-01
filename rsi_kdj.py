@@ -44,15 +44,19 @@ def fetch_candles(symbol, limit=50):
     url = f"https://contract.mexc.com/api/v1/contract/kline/{symbol}?interval=15m&limit={limit}"
     response = requests.get(url)
     if response.status_code == 200:
-        data = response.json()['data']
-        df = pd.DataFrame(data, columns=['timestamp','open','high','low','close','volume','turnover'])
-        df = df.astype({'open':'float','high':'float','low':'float','close':'float','volume':'float'})
-        df = df.iloc[::-1].reset_index(drop=True)
-        return df
+        res_json = response.json()
+        if 'data' in res_json and res_json['data']:
+            data = res_json['data']
+            df = pd.DataFrame(data, columns=['timestamp','open','high','low','close','volume','turnover'])
+            df = df.astype({'open':'float','high':'float','low':'float','close':'float','volume':'float'})
+            df = df.iloc[::-1].reset_index(drop=True)
+            return df
+        else:
+            print(f"Skipping {symbol}: No candle data")
+            return None
     else:
         print(f"Skipping {symbol}: {response.text}")
         return None
-
 # Send Telegram Alert
 def send_alert(message):
     bot.send_message(CHAT_ID, message)
