@@ -17,7 +17,7 @@ bot = telebot.TeleBot(TELEGRAM_TOKEN)
 def calculate_rsi(series, period=14):
     return ta.momentum.RSIIndicator(series, period=period).rsi()
 
-# KDJ Calculation (J only)
+# KDJ (J value)
 def calculate_kdj(df, period=14):
     low_min = df['low'].rolling(period).min()
     high_max = df['high'].rolling(period).max()
@@ -27,14 +27,26 @@ def calculate_kdj(df, period=14):
     j = 3 * k - 2 * d
     return j
 
-# Fetch 15m Candles from MEXC Futures
-def fetch_candles(symbol, limit=50):
-    url = f"https://contract.mexc.com/api/v1/contract/kline?symbol={symbol}&interval=15m&limit={limit}"
+# Fetch all USDT pairs from MEXC Futures
+def fetch_symbols():
+    url = "https://contract.mexc.com/api/v1/contract/detail"
     response = requests.get(url)
     if response.status_code == 200:
         data = response.json()['data']
-        df = pd.DataFrame(data, columns=['ts', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
-        df = df.astype({'open': 'float', 'high': 'float', 'low': 'float', 'close': 'float', 'volume': 'float'})
+        symbols = [item['symbol'] for item in data if item['quoteCoin'] == 'USDT']
+        return symbols
+    else:
+        print("Error fetching symbols:", response.text)
+        return []
+
+# Fetch candles for symbol
+def fetch_candles(symbol, limit=50):
+    url = f"https://contract.mexc.com/api/v1/contract/kline/{symbol}?interval=15m&limit={limit}"
+    response = requests.get(url)
+    if response.status_code == 200:
+        data = response.json()['data']
+        df = pd.DataFrame(data, columns=['timestamp','open','high','low','close','volume','turnover'])
+        df = df.astype({'open':'float','high':'float','low':'float','close':'float','volume':'float'})
         df = df.iloc[::-1].reset_index(drop=True)
         return df
     else:
@@ -47,9 +59,9 @@ def send_alert(message):
 
 # Main Signal Function
 def check_short_signals():
-    pairs = ['BTC_USDT', 'ETH_USDT', 'DOGE_USDT']  # MEXC Futures pairs — apni list daal lena
+    symbols = fetch_symbols()
 
-    for symbol in pairs:
+    for symbol in symbols:
         df = fetch_candles(symbol)
         if df is None or len(df) < 20:
             continue
@@ -81,7 +93,6 @@ def check_short_signals():
             send_alert(message)
 
 # Continuous Run
-if __name__ == "__main__":
-    while True:
-        check_short_signals()
-        time.sleep(300)  # 5 min delay
+while True:
+    check_short_signals()
+    time.sleep(300)  # 5 minutes
