@@ -35,7 +35,8 @@ def get_all_futures_pairs():
     response = requests.get(url)
     if response.status_code == 200:
         data = response.json()
-        return [pair["symbol"].replace("_UMCBL", "") for pair in data["data"]]
+        # Sirf USDT pairs lein jin ka status active ho
+        return [pair["symbol"].replace("_UMCBL", "") for pair in data["data"] if pair["quoteCoin"] == "USDT"]
     else:
         print("Error fetching pairs:", response.text)
         return []
@@ -51,7 +52,8 @@ def get_candles(symbol, timeframe, limit=50):
         df = df.astype(float)
         return df[::-1]  # reverse order
     else:
-        print(f"Error fetching candles for {symbol}:", response.text)
+        # sirf warning aur skip
+        print(f"Skipping {symbol}: {response.text}")
         return None
 
 # Send Telegram Alert
