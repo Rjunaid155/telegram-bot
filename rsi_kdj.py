@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 import time
-import ta  # Technical Analysis library
+import ta
 
 # ENV Variables
 TELEGRAM_TOKEN = os.getenv("TOKEN")
@@ -17,7 +17,7 @@ bot = telebot.TeleBot(TELEGRAM_TOKEN)
 def calculate_rsi(series, period=14):
     return ta.momentum.RSIIndicator(series, period=period).rsi()
 
-# KDJ Calculation (only J)
+# KDJ Calculation (J only)
 def calculate_kdj(df, period=14):
     low_min = df['low'].rolling(period).min()
     high_max = df['high'].rolling(period).max()
@@ -27,13 +27,13 @@ def calculate_kdj(df, period=14):
     j = 3 * k - 2 * d
     return j
 
-# Fetch 15m Candles
+# Fetch 15m Candles from MEXC Futures
 def fetch_candles(symbol, limit=50):
-    url = f"https://api.bitget.com/api/mix/v1/market/candles?symbol={symbol}_UMCBL&granularity=900&limit={limit}"
+    url = f"https://contract.mexc.com/api/v1/contract/kline?symbol={symbol}&interval=15m&limit={limit}"
     response = requests.get(url)
     if response.status_code == 200:
         data = response.json()['data']
-        df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+        df = pd.DataFrame(data, columns=['ts', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
         df = df.astype({'open': 'float', 'high': 'float', 'low': 'float', 'close': 'float', 'volume': 'float'})
         df = df.iloc[::-1].reset_index(drop=True)
         return df
@@ -47,7 +47,7 @@ def send_alert(message):
 
 # Main Signal Function
 def check_short_signals():
-    pairs = ['CROUSDT', 'KATUSDT', 'MAGICUSDT']  # Example list — apni desired pairs daal lena
+    pairs = ['BTC_USDT', 'ETH_USDT', 'DOGE_USDT']  # MEXC Futures pairs — apni list daal lena
 
     for symbol in pairs:
         df = fetch_candles(symbol)
@@ -81,6 +81,7 @@ def check_short_signals():
             send_alert(message)
 
 # Continuous Run
-while True:
-    check_short_signals()
-    time.sleep(300)  # Check every 5 min
+if __name__ == "__main__":
+    while True:
+        check_short_signals()
+        time.sleep(300)  # 5 min delay
