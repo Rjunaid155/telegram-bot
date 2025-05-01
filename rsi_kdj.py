@@ -1,58 +1,93 @@
-import ccxt
-import pandas as pd
-import pandas_ta as ta
 import requests
-from datetime import datetime
 import os
+import telebot
+import pandas as pd
 
-TELEGRAM_TOKEN = 'TOKEN'
-CHAT_ID = 'TELEGRAM_CHAT_ID'
+TELEGRAM_TOKEN = os.getenv("TOKEN")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-exchange = ccxt.mexc()
+bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
-def send_telegram(message):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {'CHAT_ID': CHAT_ID, 'text': message}
-    requests.post(url, data=payload)
+# RSI Calculation
+def calculate_rsi(series, period=14):
+    delta = series.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    avg_gain = gain.rolling(window=period).mean()
+    avg_loss = loss.rolling(window=period).mean()
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
 
-def fetch_ohlcv(pair, timeframe='15m', limit=50):
-    try:
-        data = exchange.fetch_ohlcv(pair, timeframe=timeframe, limit=limit)
-        df = pd.DataFrame(data, columns=['time','open','high','low','close','volume'])
-        return df
-    except Exception as e:
-        print(f"Error fetching {pair}: {str(e)}")
+# KDJ Calculation
+def calculate_kdj(df, n=14, k_period=3, d_period=3):
+    low_min = df['low'].rolling(window=n).min()
+    high_max = df['high'].rolling(window=n).max()
+    rsv = (df['close'] - low_min) / (high_max - low_min) * 100
+    k = rsv.ewm(com=(k_period-1), adjust=False).mean()
+    d = k.ewm(com=(d_period-1), adjust=False).mean()
+    j = 3 * k - 2 * d
+    return j
+
+# Get all Futures pairs
+def get_all_futures_pairs():
+    url = "https://api.bitget.com/api/mix/v1/market/contracts?productType=umcbl"
+    response = requests.get(url)
+    if response.status_code == 200:
+        data = response.json()
+        return [pair["symbol"].replace("_UMCBL", "") for pair in data["data"]]
+    else:
+        print("Error fetching pairs:", response.text)
+        return []
+
+# Get Candle Data
+def get_candles(symbol, timeframe, limit=50):
+    url = f"https://api.bitget.com/api/mix/v1/market/candles"
+    params = {"symbol": f"{symbol}_UMCBL", "granularity": timeframe, "limit": limit}
+    response = requests.get(url, params=params)
+    if response.status_code == 200:
+        data = response.json()["data"]
+        df = pd.DataFrame(data, columns=["timestamp", "open", "high", "low", "close", "volume", "quoteVolume"])
+        df = df.astype(float)
+        return df[::-1]  # reverse order
+    else:
+        print(f"Error fetching candles for {symbol}:", response.text)
         return None
 
-def check_simple_signals():
-    markets = exchange.load_markets()
-    PAIR_LIST = [symbol for symbol in markets if 'USDT' in symbol and '/USDT' in symbol]
+# Send Telegram Alert
+def send_telegram_alert(message):
+    bot.send_message(CHAT_ID, message)
 
-    signal_details = []
+# Check Signals and Send Alerts
+def check_signals():
+    pairs = get_all_futures_pairs()
+    high_prob_coins = []
 
-    for pair in PAIR_LIST:
-        df_15m = fetch_ohlcv(pair, '15m')
-        if df_15m is None or len(df_15m) < 30:
+    for symbol in pairs:
+        df_15m = get_candles(symbol, 900)
+        df_1h = get_candles(symbol, 3600)
+
+        if df_15m is None or df_1h is None:
             continue
 
-        df_15m['rsi'] = ta.rsi(df_15m['close'], length=14)
-        kdj_15m = ta.stoch(df_15m['high'], df_15m['low'], df_15m['close'])
-        df_15m['K'] = kdj_15m['STOCHk_14_3_3']
-        df_15m['D'] = kdj_15m['STOCHd_14_3_3']
-        df_15m['J'] = 3 * df_15m['K'] - 2 * df_15m['D']
+        df_15m["rsi"] = calculate_rsi(df_15m["close"])
+        df_15m["j"] = calculate_kdj(df_15m)
 
-        latest = df_15m.iloc[-1]
+        df_1h["rsi"] = calculate_rsi(df_1h["close"])
 
-        if latest['rsi'] <= 50 and latest['J'] <= 50:
-            signal_details.append(f"{pair} -> RSI: {latest['rsi']:.2f}, J: {latest['J']:.2f}")
+        latest_15m_rsi = df_15m["rsi"].iloc[-1]
+        latest_15m_j = df_15m["j"].iloc[-1]
+        latest_1h_rsi = df_1h["rsi"].iloc[-1]
 
-    if signal_details:
-        message = f"🟢 Signals Found (Easy Mode)\n\n"
-        message += "\n".join(signal_details)
-        message += f"\n\nTime: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
-        print(message)
-        send_telegram(message)
-    else:
-        print("No signals found.")
+        # High probability conditions
+        if (latest_15m_rsi <= 30 and latest_15m_j <= 20) or (latest_15m_rsi >= 70 and latest_15m_j >= 80):
+            message = f"*{symbol} Signal:*\n15m RSI: {latest_15m_rsi:.2f}, J: {latest_15m_j:.2f}\n1h RSI: {latest_1h_rsi:.2f}"
+            send_telegram_alert(message)
+            high_prob_coins.append(symbol)
 
-check_simple_signals()
+    if high_prob_coins:
+        send_telegram_alert(f"High probability coins: {', '.join(high_prob_coins)}")
+
+# Run
+if __name__ == "__main__":
+    check_signals()
