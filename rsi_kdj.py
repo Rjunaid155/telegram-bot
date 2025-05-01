@@ -4,11 +4,10 @@ import pandas_ta as ta
 import requests
 from datetime import datetime
 import os
-# Telegram config
+
 TELEGRAM_TOKEN = 'TOKEN'
 CHAT_ID = 'TELEGRAM_CHAT_ID'
 
-# MEXC Exchange
 exchange = ccxt.mexc()
 
 def send_telegram(message):
@@ -29,7 +28,7 @@ def check_simple_signals():
     markets = exchange.load_markets()
     PAIR_LIST = [symbol for symbol in markets if 'USDT' in symbol and '/USDT' in symbol]
 
-    found_pairs = []
+    signal_details = []
 
     for pair in PAIR_LIST:
         df_15m = fetch_ohlcv(pair, '15m')
@@ -44,21 +43,16 @@ def check_simple_signals():
 
         latest = df_15m.iloc[-1]
 
-        # Easy condition: RSI <= 50 and J <= 50
         if latest['rsi'] <= 50 and latest['J'] <= 50:
-            print(f"{pair} -> RSI: {latest['rsi']:.2f}, J: {latest['J']:.2f}")
-            found_pairs.append(pair)
+            signal_details.append(f"{pair} -> RSI: {latest['rsi']:.2f}, J: {latest['J']:.2f}")
 
-    if found_pairs:
-        message = f"🟢 Signal Coins (Easy Mode)\n\n"
-        for p in found_pairs:
-            message += f"- {p}\n"
-        message += f"\nTime: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
-
+    if signal_details:
+        message = f"🟢 Signals Found (Easy Mode)\n\n"
+        message += "\n".join(signal_details)
+        message += f"\n\nTime: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
         print(message)
         send_telegram(message)
     else:
         print("No signals found.")
 
-# Run simple scanner
 check_simple_signals()
