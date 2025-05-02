@@ -36,13 +36,13 @@ def fetch_candles(symbol, limit=50):
         if not data:
             print(f"Skipping {symbol}: No data")
             return None
-        df = pd.DataFrame(data, columns=['timestamp','open','high','low','close','volume','quoteVolume','count','x','y','z'])
+        # Only 6 columns from API: timestamp, open, high, low, close, volume
+        df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'quote_volume'])
         df = df.astype({'open': 'float', 'high': 'float', 'low': 'float', 'close': 'float', 'volume': 'float'})
         return df
     else:
         print(f"Skipping {symbol}: {response.text}")
         return None
-
 # Send Telegram Alert
 def send_alert(message):
     bot.send_message(CHAT_ID, message)
