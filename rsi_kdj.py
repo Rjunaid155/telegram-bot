@@ -55,8 +55,7 @@ def send_alert(message):
     bot.send_message(CHAT_ID, message)
 
 def check_short_signals():
-    pairs = fetch_symbols()
-    print(f"Checking {len(pairs)} pairs...")
+    pairs = fetch_symbols()  # Dynamic list
 
     for symbol in pairs:
         df = fetch_candles(symbol)
@@ -72,7 +71,12 @@ def check_short_signals():
         last_j = df['j'].iloc[-1]
         price = df['close'].iloc[-1]
 
-        if last_rsi > 70 and last_j > 80 and current_volume > 1.5 * avg_volume:
+        if last_rsi > 70 and last_j > 80:
+            if current_volume > 1.5 * avg_volume:
+                strength = "🔥 High Confidence"
+            else:
+                strength = "⚠️ RSI+KDJ Match Only"
+
             tp = round(price * 0.995, 4)
             sl = round(price * 1.005, 4)
             entry_low = round(price * 0.997, 4)
@@ -80,12 +84,13 @@ def check_short_signals():
             avoid_price = round(price * 1.0035, 4)
 
             message = (
-                f"⚠️ [High Probability SHORT SIGNAL] {symbol}\n"
+                f"⚠️ [SHORT SIGNAL] {symbol}\n"
                 f"📊 Price: {price}\n"
                 f"⛔ RSI 15m: {last_rsi:.2f}\n"
                 f"⛔ J: {last_j:.2f}\n"
-                f"🔥 Volume Spike: {current_volume:.2f} vs Avg {avg_volume:.2f}\n"
-                f"✅ Best Entry Between: {entry_low} - {entry_high}\n"
+                f"🔥 Volume: {current_volume:.2f} (Avg {avg_volume:.2f})\n"
+                f"✅ {strength}\n"
+                f"✅ Best Entry: {entry_low}-{entry_high}\n"
                 f"❌ Avoid Above: {avoid_price}\n"
                 f"🎯 Take Profit: {tp}\n"
                 f"❌ Stop Loss: {sl}\n"
