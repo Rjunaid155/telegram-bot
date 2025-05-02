@@ -12,7 +12,7 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
 def calculate_rsi(series, period=14):
-    return ta.momentum.RSIIndicator(series, period=period).rsi()
+    return ta.momentum.RSIIndicator(close=series, window=period).rsi()
 
 def calculate_kdj(df, period=14):
     low_min = df['low'].rolling(period).min()
