@@ -28,8 +28,7 @@ def fetch_candles(symbol, limit=50):
     response = requests.get(url)
     if response.status_code == 200:
         data = response.json()
-        df = pd.DataFrame(data, columns=['timestamp','open','high','low','close','volume',
-                                         'close_time','qav','num_trades','taker_base_vol','taker_quote_vol','ignore'])
+        df = pd.DataFrame(data, columns=['timestamp','open','high','low','close','volume','close_time','qav'])
         df = df.astype({'open': 'float', 'high': 'float', 'low': 'float',
                         'close': 'float', 'volume': 'float'})
         return df
