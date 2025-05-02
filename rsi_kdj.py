@@ -4,26 +4,25 @@ import ta
 from datetime import datetime
 
 def fetch_symbols():
-    return ['BTC_USDT', 'ETH_USDT', 'XRP_USDT']  # Apne hisab se coins daal le
+    return ['BTCUSDT', 'ETHUSDT', 'XRPUSDT']  # Apne hisab se coins daal le
 
 def fetch_candles(symbol):
-    url = f"https://api.mexc.com/api/v3/klines?symbol={symbol}&interval=5m&limit=20"
+    url = f"https://api.mexc.com/api/v3/klines?symbol={symbol}&interval=5m&limit=100"
     response = requests.get(url)
-    if response.status_code != 200:
+    if response.status_code == 200:
+        data = response.json()
+        if not data:
+            print(f"Skipping {symbol}: No candle data")
+            return None
+        df = pd.DataFrame(data, columns=['timestamp','open','high','low','close','volume',
+                                         'close_time','quote_asset_volume','number_of_trades',
+                                         'taker_buy_base_asset_volume','taker_buy_quote_asset_volume','ignore'])
+        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+        df.set_index('timestamp', inplace=True)
+        return df
+    else:
         print(f"Failed to fetch candles for {symbol}")
         return None
-
-    data = response.json()
-    if len(data) == 0:
-        print(f"No candle data for {symbol}")
-        return None
-
-    df = pd.DataFrame(data, columns=['timestamp','open','high','low','close','volume','close_time','quote_asset_volume','number_of_trades','taker_buy_base_asset_volume','taker_buy_quote_asset_volume','ignore'])
-    df = df[['timestamp','open','high','low','close','volume']]
-    df['close'] = df['close'].astype(float)
-    df['volume'] = df['volume'].astype(float)
-    return df
-
 def calculate_rsi(series, period=14):
     return ta.momentum.RSIIndicator(close=series, window=period).rsi()
 
