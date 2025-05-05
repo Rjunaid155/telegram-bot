@@ -6,16 +6,21 @@ from datetime import datetime
 import requests
 
 def fetch_candles(symbol):
-    url = f"https://api.mexc.com/api/v3/klines?symbol={symbol}&interval=5m&limit=5"
+    url = f"https://api.mexc.com/api/v3/klines?symbol={symbol}&interval=5m&limit=100"
     response = requests.get(url)
     if response.status_code == 200:
         data = response.json()
-        print(f"{symbol} first candle data: {data[0]}")
-        print(f"Length of this candle: {len(data[0])}")
+        if not data:
+            print(f"Skipping {symbol}: No candle data")
+            return None
+        df = pd.DataFrame(data, columns=['open_time', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'quote_asset_volume'])
+        df['open_time'] = pd.to_datetime(df['open_time'], unit='ms')
+        df.set_index('open_time', inplace=True)
+        df = df.astype(float, errors='ignore')
+        return df
     else:
-        print("Failed to fetch data.")
-
-fetch_candles('BTCUSDT')
+        print(f"Failed to fetch candles for {symbol}")
+        return None
 def calculate_rsi(series, period=14):
     return ta.momentum.RSIIndicator(close=series, window=period).rsi()
 
