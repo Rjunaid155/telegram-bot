@@ -3,30 +3,19 @@ import pandas as pd
 import ta
 from datetime import datetime
 
+import requests
+
 def fetch_candles(symbol):
-    url = f"https://api.mexc.com/api/v3/klines?symbol={symbol}&interval=5m&limit=100"
+    url = f"https://api.mexc.com/api/v3/klines?symbol={symbol}&interval=5m&limit=5"
     response = requests.get(url)
     if response.status_code == 200:
         data = response.json()
-        if not data:
-            print(f"Skipping {symbol}: No candle data")
-            return None
-        df = pd.DataFrame(data, columns=['open_time', 'open', 'high', 'low', 'close', 'volume',
-                                         'close_time', 'quote_asset_volume', 'number_of_trades',
-                                         'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore'])
-        df['open_time'] = pd.to_datetime(df['open_time'], unit='ms')
-        df.set_index('open_time', inplace=True)
-
-        cols_to_float = ['open', 'high', 'low', 'close', 'volume',
-                         'quote_asset_volume', 'number_of_trades',
-                         'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume']
-
-        df[cols_to_float] = df[cols_to_float].astype(float)
-
-        return df
+        print(f"{symbol} first candle data: {data[0]}")
+        print(f"Length of this candle: {len(data[0])}")
     else:
-        print(f"Failed to fetch candles for {symbol}")
-        return None
+        print("Failed to fetch data.")
+
+fetch_candles('BTCUSDT')
 def calculate_rsi(series, period=14):
     return ta.momentum.RSIIndicator(close=series, window=period).rsi()
 
