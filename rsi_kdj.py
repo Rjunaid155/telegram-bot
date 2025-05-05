@@ -65,7 +65,7 @@ def check_signals():
 
         print(f"{symbol} => RSI: {last_rsi:.2f}, J: {last_j:.2f}, Volume: {current_volume:.2f}, Avg Volume: {avg_volume:.2f}")
 
-        if last_rsi > 70 and last_j > 80:
+        if last_rsi > 30 and last_j > 5:
             tp = round(price * 0.995, 4)
             sl = round(price * 1.005, 4)
             msg_type = "🔥 [SHORT SIGNAL]"
