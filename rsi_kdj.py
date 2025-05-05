@@ -16,12 +16,17 @@ def fetch_candles(symbol):
                                          'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore'])
         df['open_time'] = pd.to_datetime(df['open_time'], unit='ms')
         df.set_index('open_time', inplace=True)
-        df = df.astype(float, errors='ignore')
+
+        cols_to_float = ['open', 'high', 'low', 'close', 'volume',
+                         'quote_asset_volume', 'number_of_trades',
+                         'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume']
+
+        df[cols_to_float] = df[cols_to_float].astype(float)
+
         return df
     else:
         print(f"Failed to fetch candles for {symbol}")
         return None
-
 def calculate_rsi(series, period=14):
     return ta.momentum.RSIIndicator(close=series, window=period).rsi()
 
