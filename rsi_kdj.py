@@ -4,7 +4,10 @@ import ta
 from datetime import datetime
 
 import requests
+import os
 
+TELEGRAM_TOKEN = os.environ.get('TOKEN')
+CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 def fetch_candles(symbol):
     url = f"https://api.mexc.com/api/v3/klines?symbol={symbol}&interval=5m&limit=100"
     response = requests.get(url)
