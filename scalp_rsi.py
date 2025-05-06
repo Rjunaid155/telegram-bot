@@ -63,7 +63,7 @@ def check_signals():
         last_rsi = df['rsi'].iloc[-1]
         price = df['close'].iloc[-1]
 
-        if last_rsi > 80 and current_volume > 1.5 * avg_volume:
+        if last_rsi > 30 and current_volume > 1.5 * avg_volume:
             tp = round(price * 0.995, 4)
             sl = round(price * 1.005, 4)
 
