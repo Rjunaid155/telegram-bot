@@ -10,16 +10,14 @@ CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
 # Fetch candles from MEXC (5m TF)
 def fetch_candles(symbol):
-    url = f"https://api.mexc.com/api/v3/klines?symbol={symbol}&interval=5m&limit=100"
+    url = f"https://contract.mexc.com/api/v1/klines?symbol={symbol}&interval=5m&limit=100"
     response = requests.get(url)
     if response.status_code == 200:
-        data = response.json()
+        data = response.json().get('data')
         if not data:
             print(f"Skipping {symbol}: No candle data")
             return None
-        df = pd.DataFrame(data, columns=[
-            'open_time', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'quote_asset_volume'
-        ])
+        df = pd.DataFrame(data, columns=['open_time', 'open', 'high', 'low', 'close', 'volume'])
         df['open_time'] = pd.to_datetime(df['open_time'], unit='ms')
         df.set_index('open_time', inplace=True)
         df = df.astype(float, errors='ignore')
