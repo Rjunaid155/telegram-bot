@@ -5,17 +5,17 @@ from datetime import datetime
 import os
 import time
 
-# Telegram credentials (Render environment variables)
+# Telegram credentials
 TELEGRAM_TOKEN = os.environ.get('TOKEN')
 CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
-# Fetch futures symbols from MEXC
+# Fetch futures symbols (USDT pairs)
 def get_futures_symbols():
     url = "https://contract.mexc.com/api/v1/contract/detail"
     response = requests.get(url)
     if response.status_code == 200:
-        data = response.json().get('data')
-        symbols = [item['symbol'] for item in data if 'USDT' in item['symbol']]
+        data = response.json()['data']
+        symbols = [s['symbol'] for s in data if s['quoteCoin'] == 'USDT']
         return symbols
     else:
         print("Failed to fetch futures symbols")
@@ -78,8 +78,8 @@ def check_signals():
         if df is None or len(df) < 20:
             continue
 
-        df['rsi'] = calculate_rsi(df['close'], 14)
-        df['j'] = calculate_kdj(df, 14)
+        df['rsi'] = calculate_rsi(df['close'])
+        df['j'] = calculate_kdj(df)
 
         avg_volume = df['volume'].iloc[:-1].mean()
         current_volume = df['volume'].iloc[-1]
@@ -87,11 +87,11 @@ def check_signals():
         last_j = df['j'].iloc[-1]
         price = df['close'].iloc[-1]
 
-        print(f"{symbol} => RSI: {last_rsi:.2f}, J: {last_j:.2f}, Volume: {current_volume:.2f}, Avg: {avg_volume:.2f}")
+        print(f"{symbol} => RSI: {last_rsi:.2f}, J: {last_j:.2f}, Vol: {current_volume:.2f} vs Avg {avg_volume:.2f}")
 
         if last_rsi >= 80 and last_j > 90:
-            tp = round(price * 0.995, 4)
-            sl = round(price * 1.005, 4)
+            tp = round(price * 0.995, 6)
+            sl = round(price * 1.005, 6)
             msg_type = "🔥 [SHORT SIGNAL]"
 
             if current_volume > 1.5 * avg_volume:
@@ -113,4 +113,4 @@ def check_signals():
 if __name__ == "__main__":
     while True:
         check_signals()
-        time.sleep(5)  # 5 sec delay between scans
+        time.sleep(60)  # 1 min delay between scans
