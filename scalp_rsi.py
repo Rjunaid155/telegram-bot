@@ -19,8 +19,7 @@ def fetch_candles(symbol):
             return None
         df = pd.DataFrame(data, columns=[
             'open_time', 'open', 'high', 'low', 'close', 'volume',
-            'close_time', 'quote_asset_volume', 'num_trades',
-            'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore'
+            'close_time', 'quote_asset_volume'
         ])
         df['open_time'] = pd.to_datetime(df['open_time'], unit='ms')
         df.set_index('open_time', inplace=True)
@@ -29,7 +28,6 @@ def fetch_candles(symbol):
     else:
         print(f"Failed to fetch candles for {symbol}: {response.text}")
         return None
-
 def calculate_rsi(series, period=14):
     return ta.momentum.RSIIndicator(close=series, window=period).rsi()
 
