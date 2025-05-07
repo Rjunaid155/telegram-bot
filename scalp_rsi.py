@@ -3,12 +3,25 @@ import pandas as pd
 import ta
 from datetime import datetime
 import os
+import time
 
 # Telegram credentials (Render environment variables)
 TELEGRAM_TOKEN = os.environ.get('TOKEN')
 CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
-# Fetch candles from MEXC (5m TF)
+# Fetch futures symbols from MEXC
+def get_futures_symbols():
+    url = "https://contract.mexc.com/api/v1/contract/detail"
+    response = requests.get(url)
+    if response.status_code == 200:
+        data = response.json().get('data')
+        symbols = [item['symbol'] for item in data if 'USDT' in item['symbol']]
+        return symbols
+    else:
+        print("Failed to fetch futures symbols")
+        return []
+
+# Fetch candles from MEXC Futures (5m TF)
 def fetch_candles(symbol):
     url = f"https://contract.mexc.com/api/v1/klines?symbol={symbol}&interval=5m&limit=100"
     response = requests.get(url)
@@ -25,6 +38,7 @@ def fetch_candles(symbol):
     else:
         print(f"Failed to fetch candles for {symbol}")
         return None
+
 # RSI calculation
 def calculate_rsi(series, period=14):
     return ta.momentum.RSIIndicator(close=series, window=period).rsi()
@@ -41,7 +55,7 @@ def calculate_kdj(df, length=14):
 
 # Send Telegram alert
 def send_alert(message):
-    print(message)  # local logs
+    print(message)
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     params = {
         'chat_id': CHAT_ID,
@@ -56,16 +70,10 @@ def send_alert(message):
 
 # Signal check logic
 def check_signals():
-    symbols_url = "https://api.mexc.com/api/v3/exchangeInfo"
-    response = requests.get(symbols_url)
-    if response.status_code != 200:
-        print("Failed to fetch symbol list")
-        return
+    symbols = get_futures_symbols()
+    print(f"Total futures symbols fetched: {len(symbols)}")
 
-    all_symbols = [s['symbol'] for s in response.json()['symbols'] if 'USDT' in s['symbol']]
-    print(f"Total symbols fetched: {len(all_symbols)}")
-
-    for symbol in all_symbols:
+    for symbol in symbols:
         df = fetch_candles(symbol)
         if df is None or len(df) < 20:
             continue
@@ -105,3 +113,4 @@ def check_signals():
 if __name__ == "__main__":
     while True:
         check_signals()
+        time.sleep(5)  # 5 sec delay between scans
