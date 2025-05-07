@@ -8,7 +8,7 @@ TELEGRAM_TOKEN = os.environ.get('TOKEN')
 CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
 def fetch_candles(symbol):
-   url = f"https://api.mexc.com/api/v3/klines?symbol={symbol}&interval=3m&limit=100"
+    url = f"https://api.mexc.com/api/v3/klines?symbol={symbol}&interval=3m&limit=100"
     response = requests.get(url)
     if response.status_code == 200:
         data = response.json()
@@ -23,7 +23,6 @@ def fetch_candles(symbol):
     else:
         print(f"Failed to fetch candles for {symbol}")
         return None
-
 def calculate_rsi(series, period=14):
     return ta.momentum.RSIIndicator(close=series, window=period).rsi()
 
