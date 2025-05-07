@@ -76,7 +76,7 @@ def check_signals():
 
         print(f"{symbol} => RSI: {last_rsi:.2f}, J: {last_j:.2f}")
 
-        if last_rsi > 80 and last_j > 80:
+        if not pd.isna(last_rsi) and not pd.isna(last_j) and last_rsi > 80 and last_j > 80:
             tp = round(price * 0.995, 4)
             sl = round(price * 1.005, 4)
 
