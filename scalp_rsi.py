@@ -57,10 +57,7 @@ def calculate_kdj(df, length=14):
 def send_alert(message):
     print(message)
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    params = {
-        'chat_id': CHAT_ID,
-        'text': message
-    }
+    params = {'chat_id': CHAT_ID, 'text': message}
     try:
         response = requests.post(url, params=params)
         if response.status_code != 200:
@@ -78,8 +75,8 @@ def check_signals():
         if df is None or len(df) < 20:
             continue
 
-        df['rsi'] = calculate_rsi(df['close'])
-        df['j'] = calculate_kdj(df)
+        df['rsi'] = calculate_rsi(df['close'], 14)
+        df['j'] = calculate_kdj(df, 14)
 
         avg_volume = df['volume'].iloc[:-1].mean()
         current_volume = df['volume'].iloc[-1]
@@ -93,7 +90,6 @@ def check_signals():
             tp = round(price * 0.995, 6)
             sl = round(price * 1.005, 6)
             msg_type = "🔥 [SHORT SIGNAL]"
-
             if current_volume > 1.5 * avg_volume:
                 msg_type = "🚨 [VOLUME SPIKE SHORT]"
 
@@ -113,4 +109,4 @@ def check_signals():
 if __name__ == "__main__":
     while True:
         check_signals()
-        time.sleep(60)  # 1 min delay between scans
+        time.sleep(60)
