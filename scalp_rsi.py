@@ -5,11 +5,9 @@ from datetime import datetime
 import os
 import time
 
-# Telegram credentials
 TELEGRAM_TOKEN = os.environ.get('TOKEN')
 CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
-# Fetch futures symbols (USDT pairs)
 def get_futures_symbols():
     url = "https://contract.mexc.com/api/v1/contract/detail"
     response = requests.get(url)
@@ -21,29 +19,28 @@ def get_futures_symbols():
         print("Failed to fetch futures symbols")
         return []
 
-# Fetch candles from MEXC Futures (5m TF)
 def fetch_candles(symbol):
     url = f"https://contract.mexc.com/api/v1/klines?symbol={symbol}&interval=5m&limit=100"
-    response = requests.get(url)
-    if response.status_code == 200:
-        data = response.json().get('data')
-        if not data:
-            print(f"Skipping {symbol}: No candle data")
+    try:
+        response = requests.get(url, timeout=5)
+        if response.status_code == 200:
+            data = response.json().get('data')
+            if not data:
+                return None
+            df = pd.DataFrame(data, columns=['open_time', 'open', 'high', 'low', 'close', 'volume'])
+            df['open_time'] = pd.to_datetime(df['open_time'], unit='ms')
+            df.set_index('open_time', inplace=True)
+            df = df.astype(float, errors='ignore')
+            return df
+        else:
             return None
-        df = pd.DataFrame(data, columns=['open_time', 'open', 'high', 'low', 'close', 'volume'])
-        df['open_time'] = pd.to_datetime(df['open_time'], unit='ms')
-        df.set_index('open_time', inplace=True)
-        df = df.astype(float, errors='ignore')
-        return df
-    else:
-        print(f"Failed to fetch candles for {symbol}")
+    except Exception as e:
+        print(f"Error fetching {symbol}: {e}")
         return None
 
-# RSI calculation
 def calculate_rsi(series, period=14):
     return ta.momentum.RSIIndicator(close=series, window=period).rsi()
 
-# KDJ J-line calculation
 def calculate_kdj(df, length=14):
     low_min = df['low'].rolling(window=length).min()
     high_max = df['high'].rolling(window=length).max()
@@ -53,30 +50,30 @@ def calculate_kdj(df, length=14):
     j = 3 * k - 2 * d
     return j
 
-# Send Telegram alert
 def send_alert(message):
     print(message)
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     params = {'chat_id': CHAT_ID, 'text': message}
     try:
-        response = requests.post(url, params=params)
-        if response.status_code != 200:
-            print(f"Failed to send Telegram message: {response.text}")
+        requests.post(url, params=params)
     except Exception as e:
-        print(f"Error sending Telegram message: {e}")
+        print(f"Error sending message: {e}")
 
-# Signal check logic
 def check_signals():
     symbols = get_futures_symbols()
-    print(f"Total futures symbols fetched: {len(symbols)}")
+    print(f"Fetched {len(symbols)} symbols")
+    alerted_symbols = set()
 
     for symbol in symbols:
+        if symbol in alerted_symbols:
+            continue
+
         df = fetch_candles(symbol)
         if df is None or len(df) < 20:
             continue
 
-        df['rsi'] = calculate_rsi(df['close'], 14)
-        df['j'] = calculate_kdj(df, 14)
+        df['rsi'] = calculate_rsi(df['close'])
+        df['j'] = calculate_kdj(df)
 
         avg_volume = df['volume'].iloc[:-1].mean()
         current_volume = df['volume'].iloc[-1]
@@ -84,12 +81,11 @@ def check_signals():
         last_j = df['j'].iloc[-1]
         price = df['close'].iloc[-1]
 
-        print(f"{symbol} => RSI: {last_rsi:.2f}, J: {last_j:.2f}, Vol: {current_volume:.2f} vs Avg {avg_volume:.2f}")
-
         if last_rsi >= 80 and last_j > 90:
             tp = round(price * 0.995, 6)
             sl = round(price * 1.005, 6)
             msg_type = "🔥 [SHORT SIGNAL]"
+
             if current_volume > 1.5 * avg_volume:
                 msg_type = "🚨 [VOLUME SPIKE SHORT]"
 
@@ -105,6 +101,7 @@ def check_signals():
                 f"Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
             )
             send_alert(message)
+            alerted_symbols.add(symbol)
 
 if __name__ == "__main__":
     while True:
