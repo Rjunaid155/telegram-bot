@@ -4,31 +4,34 @@ import ta
 from datetime import datetime
 import os
 import time
-import random
 
 TELEGRAM_TOKEN = os.environ.get('TOKEN')
 CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
-def get_futures_symbols():
-    url = "https://contract.mexc.com/api/v1/contract/detail"
+# Fetch active USDT futures symbols with min volume
+def get_active_symbols(min_volume=50000):
+    url = "https://contract.mexc.com/api/v1/ticker"
     response = requests.get(url)
+    active_symbols = []
     if response.status_code == 200:
         data = response.json()['data']
-        symbols = [s['symbol'] for s in data if s['quoteCoin'] == 'USDT']
-        return symbols
+        for item in data:
+            if item['quoteCoin'] == 'USDT' and float(item['volume']) >= min_volume:
+                active_symbols.append(item['symbol'])
     else:
-        print("Failed to fetch futures symbols")
-        return []
+        print("Failed to fetch active symbols")
+    return active_symbols
 
+# Fetch candles with retry
 def fetch_candles(symbol, retries=3):
     url = f"https://contract.mexc.com/api/v1/klines?symbol={symbol}&interval=5m&limit=100"
-    attempt = 0
-    while attempt < retries:
+    for attempt in range(retries):
         try:
             response = requests.get(url, timeout=5)
             if response.status_code == 200:
                 data = response.json().get('data')
                 if not data:
+                    print(f"Skipping {symbol}: No candle data")
                     return None
                 df = pd.DataFrame(data, columns=['open_time', 'open', 'high', 'low', 'close', 'volume'])
                 df['open_time'] = pd.to_datetime(df['open_time'], unit='ms')
@@ -36,12 +39,10 @@ def fetch_candles(symbol, retries=3):
                 df = df.astype(float, errors='ignore')
                 return df
             else:
-                attempt += 1
-                time.sleep(0.5)
+                print(f"Failed to fetch candles for {symbol}")
         except Exception as e:
-            print(f"Error fetching {symbol} (Attempt {attempt+1}): {e}")
-            attempt += 1
-            time.sleep(0.5)
+            print(f"Error fetching {symbol} (Attempt {attempt + 1}): {e}")
+        time.sleep(1)
     return None
 
 def calculate_rsi(series, period=14):
@@ -61,14 +62,17 @@ def send_alert(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     params = {'chat_id': CHAT_ID, 'text': message}
     try:
-        requests.post(url, params=params)
+        response = requests.post(url, params=params)
+        if response.status_code != 200:
+            print(f"Failed to send Telegram message: {response.text}")
     except Exception as e:
-        print(f"Error sending message: {e}")
+        print(f"Error sending Telegram message: {e}")
 
 def check_signals():
-    symbols = get_futures_symbols()
-    print(f"Fetched {len(symbols)} symbols")
-    alerted_symbols = set()
+    symbols = get_active_symbols()
+    print(f"Fetched {len(symbols)} active symbols")
+
+    alerted_symbols = set()  # to avoid duplicate alerts in same run
 
     for symbol in symbols:
         if symbol in alerted_symbols:
@@ -78,8 +82,8 @@ def check_signals():
         if df is None or len(df) < 20:
             continue
 
-        df['rsi'] = calculate_rsi(df['close'])
-        df['j'] = calculate_kdj(df)
+        df['rsi'] = calculate_rsi(df['close'], 14)
+        df['j'] = calculate_kdj(df, 14)
 
         avg_volume = df['volume'].iloc[:-1].mean()
         current_volume = df['volume'].iloc[-1]
@@ -87,11 +91,12 @@ def check_signals():
         last_j = df['j'].iloc[-1]
         price = df['close'].iloc[-1]
 
+        print(f"{symbol} => RSI: {last_rsi:.2f}, J: {last_j:.2f}, Vol: {current_volume:.2f} vs Avg {avg_volume:.2f}")
+
         if last_rsi >= 80 and last_j > 90:
             tp = round(price * 0.995, 6)
             sl = round(price * 1.005, 6)
             msg_type = "🔥 [SHORT SIGNAL]"
-
             if current_volume > 1.5 * avg_volume:
                 msg_type = "🚨 [VOLUME SPIKE SHORT]"
 
@@ -108,8 +113,6 @@ def check_signals():
             )
             send_alert(message)
             alerted_symbols.add(symbol)
-
-        time.sleep(random.uniform(0.2, 0.4))  # Throttle between requests
 
 if __name__ == "__main__":
     while True:
