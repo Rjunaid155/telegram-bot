@@ -4,6 +4,7 @@ import ta
 from datetime import datetime
 import os
 import time
+import random
 
 TELEGRAM_TOKEN = os.environ.get('TOKEN')
 CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
@@ -19,24 +20,29 @@ def get_futures_symbols():
         print("Failed to fetch futures symbols")
         return []
 
-def fetch_candles(symbol):
+def fetch_candles(symbol, retries=3):
     url = f"https://contract.mexc.com/api/v1/klines?symbol={symbol}&interval=5m&limit=100"
-    try:
-        response = requests.get(url, timeout=5)
-        if response.status_code == 200:
-            data = response.json().get('data')
-            if not data:
-                return None
-            df = pd.DataFrame(data, columns=['open_time', 'open', 'high', 'low', 'close', 'volume'])
-            df['open_time'] = pd.to_datetime(df['open_time'], unit='ms')
-            df.set_index('open_time', inplace=True)
-            df = df.astype(float, errors='ignore')
-            return df
-        else:
-            return None
-    except Exception as e:
-        print(f"Error fetching {symbol}: {e}")
-        return None
+    attempt = 0
+    while attempt < retries:
+        try:
+            response = requests.get(url, timeout=5)
+            if response.status_code == 200:
+                data = response.json().get('data')
+                if not data:
+                    return None
+                df = pd.DataFrame(data, columns=['open_time', 'open', 'high', 'low', 'close', 'volume'])
+                df['open_time'] = pd.to_datetime(df['open_time'], unit='ms')
+                df.set_index('open_time', inplace=True)
+                df = df.astype(float, errors='ignore')
+                return df
+            else:
+                attempt += 1
+                time.sleep(0.5)
+        except Exception as e:
+            print(f"Error fetching {symbol} (Attempt {attempt+1}): {e}")
+            attempt += 1
+            time.sleep(0.5)
+    return None
 
 def calculate_rsi(series, period=14):
     return ta.momentum.RSIIndicator(close=series, window=period).rsi()
@@ -102,6 +108,8 @@ def check_signals():
             )
             send_alert(message)
             alerted_symbols.add(symbol)
+
+        time.sleep(random.uniform(0.2, 0.4))  # Throttle between requests
 
 if __name__ == "__main__":
     while True:
