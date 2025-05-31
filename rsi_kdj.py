@@ -1,115 +1,71 @@
 import requests
 import pandas as pd
 import ta
-from datetime import datetime
-import os
 import time
+import telegram
 
-# Telegram credentials
-TELEGRAM_TOKEN = os.environ.get('TOKEN')
-CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
+# Telegram config
+bot_token = 'YOUR_TELEGRAM_BOT_TOKEN'
+chat_id = 'YOUR_CHAT_ID'
+bot = telegram.Bot(token=bot_token)
 
-# Fetch all USDT futures symbols
-def get_futures_symbols():
+# Fetch all symbols
+def get_symbols():
     url = "https://contract.mexc.com/api/v1/contract/detail"
-    response = requests.get(url)
-    if response.status_code == 200:
-        data = response.json()['data']
-        symbols = [s['symbol'] for s in data if s['quoteCoin'] == 'USDT']
-        # Exclude BTC, ETH, XRP
-        symbols = [s for s in symbols if s not in ['BTC_USDT', 'ETH_USDT', 'XRP_USDT']]
-        return symbols
-    else:
-        print("Failed to fetch futures symbols")
+    try:
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            symbols = [item['symbol'] for item in data['data']]
+            return symbols
+    except:
         return []
+    return []
 
 # Fetch candles
 def fetch_candles(symbol):
     url = f"https://contract.mexc.com/api/v1/klines?symbol={symbol}&interval=5m&limit=100"
     try:
-        response = requests.get(url, timeout=5)
-        response.raise_for_status()
-        data = response.json().get('data')
-        if not data:
-            print(f"Skipping {symbol}: No candle data")
-            return None
-        df = pd.DataFrame(data, columns=['open_time', 'open', 'high', 'low', 'close', 'volume'])
-        df['open_time'] = pd.to_datetime(df['open_time'], unit='ms')
-        df.set_index('open_time', inplace=True)
-        df = df.astype(float, errors='ignore')
-        return df
-    except Exception as e:
-        print(f"Error fetching {symbol}: {e}")
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            data = response.json().get('data')
+            if not data:
+                return None
+            df = pd.DataFrame(data, columns=['open_time', 'open', 'high', 'low', 'close', 'volume'])
+            df['open_time'] = pd.to_datetime(df['open_time'], unit='ms')
+            df.set_index('open_time', inplace=True)
+            df = df.astype(float, errors='ignore')
+            return df
+    except:
         return None
+    return None
 
-# RSI calculation
-def calculate_rsi(series, period=14):
-    return ta.momentum.RSIIndicator(close=series, window=period).rsi()
+# RSI & KDJ calculation
+def analyze_symbol(symbol):
+    df = fetch_candles(symbol)
+    if df is None or df.empty:
+        return
 
-# KDJ J-line calculation
-def calculate_kdj(df, length=14):
-    low_min = df['low'].rolling(window=length).min()
-    high_max = df['high'].rolling(window=length).max()
-    rsv = (df['close'] - low_min) / (high_max - low_min) * 100
-    k = rsv.ewm(com=2).mean()
-    d = k.ewm(com=2).mean()
-    j = 3 * k - 2 * d
-    return j
+    df['rsi'] = ta.momentum.RSIIndicator(df['close'], window=14).rsi()
+    df['k'] = ta.momentum.stoch(df['high'], df['low'], df['close'], window=14, smooth_window=3)
+    df['d'] = df['k'].rolling(3).mean()
 
-# Send Telegram alert
-def send_alert(message):
-    print(message)
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    params = {'chat_id': CHAT_ID, 'text': message}
-    try:
-        response = requests.post(url, params=params)
-        if response.status_code != 200:
-            print(f"Failed to send Telegram message: {response.text}")
-    except Exception as e:
-        print(f"Error sending Telegram message: {e}")
+    last_rsi = df['rsi'].iloc[-1]
+    last_k = df['k'].iloc[-1]
+    last_d = df['d'].iloc[-1]
 
-# Signal check logic
-def check_signals():
-    symbols = get_futures_symbols()
-    print(f"Fetched {len(symbols)} altcoin symbols")
+    # Signal condition (example)
+    if last_rsi < 30 and last_k < 20 and last_d < 20:
+        message = f"🔔 {symbol} Oversold Alert!\nRSI: {last_rsi:.2f}, K: {last_k:.2f}, D: {last_d:.2f}"
+        bot.send_message(chat_id=chat_id, text=message, parse_mode=telegram.ParseMode.MARKDOWN)
 
+# Main loop
+def run_scanner():
+    symbols = get_symbols()
+    print(f"Fetched {len(symbols)} symbols")
     for symbol in symbols:
-        df = fetch_candles(symbol)
-        if df is None or len(df) < 20:
-            continue
-
-        df['rsi'] = calculate_rsi(df['close'], 14)
-        df['j'] = calculate_kdj(df, 14)
-
-        avg_volume = df['volume'].iloc[:-1].mean()
-        current_volume = df['volume'].iloc[-1]
-        last_rsi = df['rsi'].iloc[-1]
-        last_j = df['j'].iloc[-1]
-        price = df['close'].iloc[-1]
-
-        print(f"{symbol} => RSI: {last_rsi:.2f}, J: {last_j:.2f}, Vol: {current_volume:.2f}")
-
-        if last_rsi >= 80 and last_j > 90:
-            tp = round(price * 0.995, 6)
-            sl = round(price * 1.005, 6)
-            msg_type = " [SHORT SIGNAL]"
-            if current_volume > 1.5 * avg_volume:
-                msg_type = " [VOLUME SPIKE SHORT]"
-
-            message = (
-                f"{msg_type} {symbol}\n"
-                f" Price: {price}\n"
-                f"RSI: {last_rsi:.2f}\n"
-                f"J: {last_j:.2f}\n"
-                f"Volume: {current_volume:.2f} vs Avg {avg_volume:.2f}\n"
-                f"Entry: {price}\n"
-                f"Take Profit: {tp}\n"
-                f"Stop Loss: {sl}\n"
-                f"Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
-            )
-            send_alert(message)
+        analyze_symbol(symbol)
+        time.sleep(0.5)  # 0.5 sec delay to avoid rate limit
 
 if __name__ == "__main__":
-    while True:
-        check_signals()
-        time.sleep(60)
+    run_scanner()
