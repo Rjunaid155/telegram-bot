@@ -3,11 +3,12 @@ import pandas as pd
 import ta
 import time
 import telegram
+import os
 
-# Telegram config
-bot_token = 'YOUR_TELEGRAM_BOT_TOKEN'
-chat_id = 'YOUR_CHAT_ID'
-bot = telegram.Bot(token=bot_token)
+# Telegram credentials from environment
+TELEGRAM_TOKEN = os.environ.get('TOKEN')
+CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
+bot = telegram.Bot(token=TELEGRAM_TOKEN)
 
 # Fetch all symbols
 def get_symbols():
@@ -57,7 +58,7 @@ def analyze_symbol(symbol):
     # Signal condition (example)
     if last_rsi < 30 and last_k < 20 and last_d < 20:
         message = f"🔔 {symbol} Oversold Alert!\nRSI: {last_rsi:.2f}, K: {last_k:.2f}, D: {last_d:.2f}"
-        bot.send_message(chat_id=chat_id, text=message, parse_mode=telegram.ParseMode.MARKDOWN)
+        bot.send_message(chat_id=CHAT_ID, text=message, parse_mode=telegram.ParseMode.MARKDOWN)
 
 # Main loop
 def run_scanner():
