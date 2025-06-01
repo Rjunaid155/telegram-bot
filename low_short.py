@@ -3,12 +3,11 @@ import pandas as pd
 import time
 from datetime import datetime
 import telegram
+import os
 
-# Telegram Setup
-bot_token = 'YOUR_TELEGRAM_BOT_TOKEN'
-chat_id = 'YOUR_CHAT_ID'
-bot = telegram.Bot(token=bot_token)
-
+# Telegram Config
+TELEGRAM_TOKEN = os.environ.get('TOKEN')
+CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 # Fetch Futures Symbols
 def get_symbols():
     url = 'https://contract.mexc.com/api/v1/contract/detail'
