@@ -10,22 +10,31 @@ TELEGRAM_TOKEN = os.environ.get('TOKEN')
 CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
 # Candles fetch function
-def fetch_candles(symbol):
-    try:
-        url = f"https://contract.mexc.com/api/v1/klines?symbol={symbol}&interval=5m&limit=100"
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        data = response.json()['data']
-        if not data:
-            return None
-        df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-        df.set_index('timestamp', inplace=True)
-        df = df.astype(float)
-        return df
-    except Exception as e:
-        print(f"Fetch Error for {symbol}: {e}")
-        return None
+def fetch_candles(symbol, retries=2):
+    url = f"https://contract.mexc.com/api/v1/klines?symbol={symbol}&interval=5m&limit=100"
+    
+    for attempt in range(retries):
+        try:
+            response = requests.get(url, timeout=20)
+            response.raise_for_status()
+            data = response.json().get('data')
+            
+            if not data:
+                return None
+            
+            df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+            df.set_index('timestamp', inplace=True)
+            df = df.astype(float)
+            
+            return df
+
+        except Exception as e:
+            if attempt == retries - 1:
+                print(f"Fetch Error for {symbol}: {e}")
+                return None
+            else:
+                time.sleep(2)  # wait 2 sec before retry
 
 # Lower Low detection function
 def is_lower_low(df):
