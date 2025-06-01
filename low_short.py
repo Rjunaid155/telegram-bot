@@ -1,101 +1,70 @@
 import requests
 import pandas as pd
-import ta
-import os
 import time
 from datetime import datetime
+import telegram
 
-# Telegram Config
-TELEGRAM_TOKEN = os.environ.get('TOKEN')
-CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
+# Telegram Setup
+bot_token = 'YOUR_TELEGRAM_BOT_TOKEN'
+chat_id = 'YOUR_CHAT_ID'
+bot = telegram.Bot(token=bot_token)
 
-# Candles fetch function
-def fetch_candles(symbol, retries=2):
-    url = f"https://contract.mexc.com/api/v1/klines?symbol={symbol}&interval=5m&limit=100"
-    
-    for attempt in range(retries):
-        try:
-            response = requests.get(url, timeout=20)
-            response.raise_for_status()
-            data = response.json().get('data')
-            
-            if not data:
-                return None
-            
-            df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-            df.set_index('timestamp', inplace=True)
-            df = df.astype(float)
-            
-            return df
-
-        except Exception as e:
-            if attempt == retries - 1:
-                print(f"Fetch Error for {symbol}: {e}")
-                return None
-            else:
-                time.sleep(2)  # wait 2 sec before retry
-
-# Lower Low detection function
-def is_lower_low(df):
-    lows = df['low']
-    if len(lows) < 3:
-        return False
-    if lows.iloc[-1] < lows.iloc[-2] < lows.iloc[-3]:
-        return True
-    return False
-
-# Send Telegram alert
-def send_alert(symbol, price, tp, sl):
-    message = (
-        f" [SHORT SIGNAL] {symbol}\n"
-        f" Price: {price}\n"
-        f"Take Profit: {tp}\n"
-        f"Stop Loss: {sl}\n"
-        f"Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
-    )
-    print(message)
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    params = {
-        'chat_id': CHAT_ID,
-        'text': message
-    }
-    try:
-        requests.post(url, params=params)
-    except Exception as e:
-        print(f"Telegram Error: {e}")
-
-# All futures symbols fetch
+# Fetch Futures Symbols
 def get_symbols():
-    try:
-        url = "https://contract.mexc.com/api/v1/contract/detail"
-        response = requests.get(url)
-        response.raise_for_status()
-        data = response.json()['data']
-        symbols = [item['symbol'] for item in data]
-        print(f"Fetched {len(symbols)} future symbols")
-        return symbols
-    except Exception as e:
-        print(f"Error fetching symbols: {e}")
-        return []
+    url = 'https://contract.mexc.com/api/v1/contract/detail'
+    response = requests.get(url, timeout=10)
+    data = response.json()
+    symbols = [item['symbol'] for item in data['data']]
+    return symbols
+
+# Fetch Candle Data
+def fetch_candles(symbol):
+    url = f"https://contract.mexc.com/api/v1/contract/kline/{symbol}?interval=5m&limit=100"
+    response = requests.get(url, timeout=10)
+    data = response.json()['data']
+    df = pd.DataFrame(data)
+    df.columns = ['timestamp','open','high','low','close','volume']
+    df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+    df = df.astype(float)
+    return df
+
+# Check LL Setup
+def check_LL(df):
+    if len(df) < 3:
+        return False, None, None, None
+
+    last_low = df['low'].iloc[-1]
+    prev_low = df['low'].iloc[-2]
+    prev_prev_low = df['low'].iloc[-3]
+
+    if last_low < prev_low and prev_low < prev_prev_low:
+        entry = last_low
+        tp = entry * 0.985
+        sl = entry * 1.005
+        return True, entry, tp, sl
+
+    return False, None, None, None
 
 # Main Scanner
-def check_signals():
+def scanner():
     symbols = get_symbols()
-    for symbol in symbols:
-        df = fetch_candles(symbol)
-        if df is None:
-            continue
-        if is_lower_low(df):
-            price = df['close'].iloc[-1]
-            tp = round(price * 0.985, 4)  # 1.5% TP
-            sl = round(price * 1.005, 4)
-            send_alert(symbol, price, tp, sl)
-        time.sleep(0.3)
+    print(f"Fetched {len(symbols)} futures symbols")
 
-# Continuous Scanner Loop
-if __name__ == "__main__":
     while True:
-        check_signals()
-        print("Scan completed. Waiting 20 seconds for next scan...\n")
-        time.sleep(20)
+        for symbol in symbols:
+            try:
+                df = fetch_candles(symbol)
+                signal, entry, tp, sl = check_LL(df)
+
+                if signal:
+                    msg = f" LL Short Signal on {symbol}\nEntry: {entry:.4f}\nTP: {tp:.4f}\nSL: {sl:.4f}\nTime: {datetime.now().strftime('%H:%M:%S')}"
+                    bot.send_message(chat_id=chat_id, text=msg)
+                    print(msg)
+
+            except Exception as e:
+                print(f"Error for {symbol}: {e}")
+
+        time.sleep(10)  # Sleep before next scan cycle
+
+if __name__ == "__main__":
+    scanner()
