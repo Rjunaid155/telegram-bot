@@ -23,8 +23,11 @@ def fetch_candles(symbol):
     try:
         response = requests.get(url, timeout=10)
         response.raise_for_status()
-        data = response.json()['data']
-        df = pd.DataFrame(data)
+        data = response.json()
+        if 'data' not in data or not data['data']:
+            print(f"No candle data for {symbol}")
+            return None
+        df = pd.DataFrame(data['data'])
         df.columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
         df['open'] = df['open'].astype(float)
         df['high'] = df['high'].astype(float)
