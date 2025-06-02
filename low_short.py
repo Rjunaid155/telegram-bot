@@ -3,6 +3,7 @@ import pandas as pd
 import time
 import telegram
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Telegram Config
 TELEGRAM_TOKEN = os.environ.get('TOKEN')
@@ -11,6 +12,7 @@ bot = telegram.Bot(token=TELEGRAM_TOKEN)
 
 TIMEOUT = 10
 MAX_RETRIES = 3
+MAX_WORKERS = 50  # parallel requests
 
 def fetch_symbols():
     url = "https://contract.mexc.com/api/v1/contract/detail"
@@ -25,9 +27,9 @@ def fetch_symbols():
         print(f"Symbol Fetch Error: {e}")
         return []
 
-def fetch_candles(symbol, retries=MAX_RETRIES):
+def fetch_candles(symbol):
     url = f"https://contract.mexc.com/api/v1/contract/kline?symbol={symbol}&interval=1m&limit=10"
-    for attempt in range(retries):
+    for attempt in range(MAX_RETRIES):
         try:
             response = requests.get(url, timeout=TIMEOUT)
             response.raise_for_status()
@@ -35,14 +37,14 @@ def fetch_candles(symbol, retries=MAX_RETRIES):
             if 'data' in data and len(data['data']) > 0:
                 df = pd.DataFrame(data['data'], columns=["timestamp", "open", "high", "low", "close", "volume"])
                 df[['open', 'high', 'low', 'close', 'volume']] = df[['open', 'high', 'low', 'close', 'volume']].astype(float)
-                return df
+                return symbol, df
             else:
                 print(f"No candle data for {symbol}")
-                return pd.DataFrame()
+                return symbol, pd.DataFrame()
         except Exception as e:
             print(f"Fetch Error for {symbol}: {e} (attempt {attempt+1})")
-            time.sleep(1)
-    return pd.DataFrame()
+            time.sleep(0.5)
+    return symbol, pd.DataFrame()
 
 def check_signal(symbol, df):
     if df.empty or len(df) < 3:
@@ -62,10 +64,12 @@ def scanner():
     symbols = fetch_symbols()
     print(f"Total symbols to scan: {len(symbols)}")
     while True:
-        for symbol in symbols:
-            df = fetch_candles(symbol)
-            check_signal(symbol, df)
-        time.sleep(3)
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            futures = [executor.submit(fetch_candles, symbol) for symbol in symbols]
+            for future in as_completed(futures):
+                symbol, df = future.result()
+                check_signal(symbol, df)
+        time.sleep(5)
 
 if __name__ == "__main__":
     scanner()
