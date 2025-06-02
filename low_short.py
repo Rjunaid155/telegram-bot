@@ -26,23 +26,28 @@ def fetch_symbols():
         return []
 
 # Fetch Candles
-def fetch_candles(symbol):
+def fetch_candles(symbol, retries=3):
     url = f"https://contract.mexc.com/api/v1/contract/kline?symbol={symbol}&interval=1m&limit=10"
-    try:
-        response = requests.get(url, timeout=7)
-        response.raise_for_status()
-        data = response.json()
-        if 'data' in data and len(data['data']) > 0:
-            df = pd.DataFrame(data['data'], columns=['timestamp','open','high','low','close','volume','amount'])
-            df[['open','high','low','close','volume','amount']] = df[['open','high','low','close','volume','amount']].astype(float)
-            return df
-        else:
-            print(f"No candle data for {symbol}")
-            return None
-    except Exception as e:
-        print(f"Fetch Error for {symbol}: {e}")
-        return None
+    attempt = 0
+    while attempt < retries:
+        try:
+            response = requests.get(url, timeout=12)
+            response.raise_for_status()
+            data = response.json()
+            if 'data' in data and len(data['data']) > 0:
+                df = pd.DataFrame(data['data'], columns=['timestamp','open','high','low','close','volume','amount'])
+                df[['open','high','low','close','volume','amount']] = df[['open','high','low','close','volume','amount']].astype(float)
+                return df
+            else:
+                print(f"No candle data for {symbol}")
+                return None
+        except Exception as e:
+            print(f"Fetch Error for {symbol}: {e} (attempt {attempt+1})")
+            attempt += 1
+            time.sleep(1)  # 1 second delay before retry
 
+    print(f"Failed to fetch data for {symbol} after {retries} attempts.")
+    return None
 # Signal Check
 def check_signal(symbol, df):
     if df is None or len(df) < 3:
