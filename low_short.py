@@ -10,13 +10,17 @@ CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
 # Fetch Symbols
 def fetch_symbols():
-    url = "https://contract.mexc.com/api/v1/contract/ticker"
-    response = requests.get(url, timeout=10)
-    response.raise_for_status()
-    data = response.json()
-    symbols = [item['symbol'] for item in data['data'] if '_USDT' in item['symbol']]
-    return symbols
-
+    url = "https://contract.mexc.com/api/v1/contract/detail"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        symbols = [item['symbol'] for item in data['data']]
+        print(f"Fetched {len(symbols)} symbols")
+        return symbols
+    except Exception as e:
+        print(f"Symbol Fetch Error: {e}")
+        return []
 # Fetch Candles
 def fetch_candles(symbol):
     url = f"https://contract.mexc.com/api/v1/contract/kline/{symbol}?interval=5m&limit=30"
