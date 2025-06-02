@@ -19,14 +19,23 @@ def get_symbols():
 # Fetch Candle Data
 def fetch_candles(symbol):
     url = f"https://contract.mexc.com/api/v1/contract/kline/{symbol}?interval=5m&limit=100"
-    response = requests.get(url, timeout=10)
-    data = response.json()['data']
-    df = pd.DataFrame(data)
-    df.columns = ['timestamp','open','high','low','close','volume']
-    df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-    df = df.astype(float)
-    return df
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
 
+        # Check if 'data' exists and is not empty
+        if 'data' in data and data['data']:
+            df = pd.DataFrame(data['data'])
+            df.columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume', 'turnover']
+            df['close'] = pd.to_numeric(df['close'])
+            return df
+        else:
+            return None  # skip this symbol silently
+
+    except Exception as e:
+        print(f"Fetch Error for {symbol}: {e}")
+        return None
 # Check LL Setup
 def check_LL(df):
     if len(df) < 3:
