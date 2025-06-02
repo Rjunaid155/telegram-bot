@@ -2,11 +2,11 @@ import requests
 import pandas as pd
 import time
 import telegram
+import os
 
-# Telegram Setup
-bot_token = 'YOUR_TELEGRAM_BOT_TOKEN'
-chat_id = 'YOUR_CHAT_ID'
-bot = telegram.Bot(token=bot_token)
+# Telegram Config
+TELEGRAM_TOKEN = os.environ.get('TOKEN')
+CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
 # Fetch Symbols
 def fetch_symbols():
