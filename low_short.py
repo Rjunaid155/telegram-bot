@@ -23,25 +23,19 @@ def fetch_symbols():
         return []
 # Fetch Candles
 def fetch_candles(symbol):
-    url = f"https://contract.mexc.com/api/v1/contract/kline/{symbol}?interval=5m&limit=30"
+    url = f"https://contract.mexc.com/api/v1/contract/kline?symbol={symbol}&interval=1m&limit=10"
     try:
         response = requests.get(url, timeout=10)
         response.raise_for_status()
         data = response.json()
-        if 'data' not in data or not data['data']:
+        if 'data' in data and len(data['data']) > 0:
+            return data['data']
+        else:
             print(f"No candle data for {symbol}")
-            return None
-        df = pd.DataFrame(data['data'])
-        df.columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
-        df['open'] = df['open'].astype(float)
-        df['high'] = df['high'].astype(float)
-        df['low'] = df['low'].astype(float)
-        df['close'] = df['close'].astype(float)
-        return df
+            return []
     except Exception as e:
         print(f"Fetch Error for {symbol}: {e}")
-        return None
-
+        return []
 # Signal Check
 def check_signal(symbol, df):
     if df is None or len(df) < 3:
