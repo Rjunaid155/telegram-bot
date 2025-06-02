@@ -3,13 +3,15 @@ import pandas as pd
 import time
 import telegram
 import os
-import threading
-from queue import Queue
 
 # Telegram Config
 TELEGRAM_TOKEN = os.environ.get('TOKEN')
 CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
-bot = telegram.Bot(token=TELEGRAM_TOKEN)
+
+# Request Config
+MAX_RETRIES = 3
+REQUEST_TIMEOUT = 15
+RETRY_DELAY = 2  # seconds
 
 # Fetch Symbols
 def fetch_symbols():
@@ -25,7 +27,7 @@ def fetch_symbols():
         print(f"Symbol Fetch Error: {e}")
         return []
 
-# Fetch Candles
+# Fetch Candles with Retry
 def fetch_candles(symbol, retries=MAX_RETRIES):
     url = f"https://contract.mexc.com/api/v1/contract/kline?symbol={symbol}&interval=1m&limit=10"
     attempt = 0
@@ -48,6 +50,7 @@ def fetch_candles(symbol, retries=MAX_RETRIES):
 
     print(f"Failed to fetch data for {symbol} after {retries} attempts.")
     return None
+
 # Signal Check
 def check_signal(symbol, df):
     if df is None or len(df) < 3:
@@ -60,49 +63,22 @@ def check_signal(symbol, df):
     if last['low'] < prev['low'] and prev['low'] < prev2['low']:
         wick_size = (last['high'] - last['low']) / last['low'] * 100
         if wick_size >= 1:  # 1% rejection wick
-            msg = f"🔥 SHORT Signal 🔥\n\n📊 Symbol: {symbol}\n💰 Price: {last['close']}\n⏰ Timeframe: 1m\n✅ Condition: Confirmed Lower Low with 1% Wick"
+            msg = f" SHORT Signal \nSymbol: {symbol}\nPrice: {last['close']}\nTimeframe: 1m\nCondition: Confirmed Lower Low with Wick"
             bot.send_message(chat_id=CHAT_ID, text=msg)
             print(f"Signal Sent: {symbol}")
-
-# Worker Thread
-def worker():
-    while True:
-        symbol = q.get()
-        if symbol is None:
-            break
-        df = fetch_candles(symbol)
-        check_signal(symbol, df)
-        q.task_done()
 
 # Scanner Loop
 def scanner():
     symbols = fetch_symbols()
     print(f"Total symbols to scan: {len(symbols)}")
-
     while True:
         for symbol in symbols:
-            q.put(symbol)
+            df = fetch_candles(symbol)
+            check_signal(symbol, df)
+        time.sleep(3)  # adjust as needed
 
-        q.join()  # wait for all tasks to complete
-
-        time.sleep(3)  # delay before next scan
+# Telegram Bot Initialize
+bot = telegram.Bot(token=TELEGRAM_TOKEN)
 
 if __name__ == "__main__":
-    q = Queue()
-    num_threads = 12
-    threads = []
-
-    # Start worker threads
-    for _ in range(num_threads):
-        t = threading.Thread(target=worker)
-        t.start()
-        threads.append(t)
-
-    # Start scanning
     scanner()
-
-    # Stop worker threads
-    for _ in range(num_threads):
-        q.put(None)
-    for t in threads:
-        t.join()
