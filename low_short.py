@@ -26,12 +26,12 @@ def fetch_symbols():
         return []
 
 # Fetch Candles
-def fetch_candles(symbol, retries=3):
+def fetch_candles(symbol, retries=MAX_RETRIES):
     url = f"https://contract.mexc.com/api/v1/contract/kline?symbol={symbol}&interval=1m&limit=10"
     attempt = 0
     while attempt < retries:
         try:
-            response = requests.get(url, timeout=12)
+            response = requests.get(url, timeout=REQUEST_TIMEOUT)
             response.raise_for_status()
             data = response.json()
             if 'data' in data and len(data['data']) > 0:
@@ -44,7 +44,7 @@ def fetch_candles(symbol, retries=3):
         except Exception as e:
             print(f"Fetch Error for {symbol}: {e} (attempt {attempt+1})")
             attempt += 1
-            time.sleep(1)  # 1 second delay before retry
+            time.sleep(RETRY_DELAY)
 
     print(f"Failed to fetch data for {symbol} after {retries} attempts.")
     return None
