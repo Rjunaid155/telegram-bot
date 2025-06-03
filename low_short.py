@@ -1,111 +1,77 @@
 import os
 import requests
-import time
-from datetime import datetime
 import pandas as pd
 import numpy as np
+from datetime import datetime
+import time
 
-# Environment Variables
+# Telegram Bot config (from environment variables)
 TELEGRAM_TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# MEXC endpoints
-SYMBOLS_URL = "https://contract.mexc.com/api/v1/contract/ticker"
-CANDLE_URL = "https://contract.mexc.com/api/v1/contract/kline/{symbol}?interval=M5&limit=50"
+# MEXC Futures API endpoint
+BASE_URL = "https://contract.mexc.com/api/v1/contract/kline"
 
-# Settings
-RSI_PERIOD = 14
-RSI_OVERBOUGHT = 70
-REJECTION_RATIO = 1.5
-MAX_RETRIES = 2
+# List of symbols to scan (you can dynamically fetch all too)
+symbols = ['BTC_USDT', 'ETH_USDT', 'XRP_USDT']  # Add/remove as needed
 
 def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": message,
-        "parse_mode": "Markdown"
-    }
-    try:
-        requests.post(url, data=payload)
-    except Exception as e:
-        print(f"Telegram error: {e}")
+    payload = {'chat_id': TELEGRAM_CHAT_ID, 'text': message}
+    requests.post(url, data=payload)
 
-def fetch_symbols():
-    try:
-        res = requests.get(SYMBOLS_URL, timeout=10)
-        data = res.json()
-        symbols = [item["symbol"] for item in data['data']]
-        return symbols
-    except Exception as e:
-        print(f"Symbol fetch error: {e}")
-        return []
+def get_klines(symbol, interval="5m", limit=20):
+    params = {"symbol": symbol, "interval": interval, "limit": limit}
+    response = requests.get(BASE_URL, params=params)
+    if response.status_code == 200:
+        return response.json()['data']
+    return []
 
-def fetch_candles(symbol):
-    for attempt in range(MAX_RETRIES):
-        try:
-            res = requests.get(CANDLE_URL.format(symbol=symbol), timeout=10)
-            data = res.json()
-            if 'data' in data and len(data['data']) >= RSI_PERIOD:
-                return pd.DataFrame(data['data'], columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-        except Exception as e:
-            print(f"Fetch Error for {symbol}: {e} (attempt {attempt+1})")
-        time.sleep(1)
-    return None
-
-def calculate_rsi(df, period=14):
-    df['close'] = df['close'].astype(float)
-    delta = df['close'].diff()
+def calculate_rsi(close_prices, period=14):
+    delta = np.diff(close_prices)
     gain = np.where(delta > 0, delta, 0)
     loss = np.where(delta < 0, -delta, 0)
-    avg_gain = pd.Series(gain).rolling(window=period).mean()
-    avg_loss = pd.Series(loss).rolling(window=period).mean()
+
+    avg_gain = np.convolve(gain, np.ones(period), 'valid') / period
+    avg_loss = np.convolve(loss, np.ones(period), 'valid') / period
+
     rs = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
-    return rsi.iloc[-1]
+    return np.concatenate((np.full(period, np.nan), rsi))
 
-def check_wick_rejection(df):
-    latest = df.iloc[-1]
-    open_price = float(latest['open'])
-    high_price = float(latest['high'])
-    close_price = float(latest['close'])
+def check_short_signal(candle, rsi_value):
+    open_price = float(candle['open'])
+    high_price = float(candle['high'])
+    close_price = float(candle['close'])
 
-    body = abs(close_price - open_price)
-    upper_wick = high_price - max(open_price, close_price)
+    upper_wick = (high_price - max(open_price, close_price)) / close_price * 100
 
-    return upper_wick >= body * REJECTION_RATIO, high_price, close_price
+    if rsi_value >= 75 and 0.5 <= upper_wick <= 1.5:
+        return True, upper_wick
+    return False, upper_wick
 
-def scan_market():
-    symbols = fetch_symbols()
-    print(f"Fetched {len(symbols)} symbols")
-
+def run_scanner():
     for symbol in symbols:
-        df = fetch_candles(symbol)
-        if df is None:
+        klines = get_klines(symbol)
+        if len(klines) < 15:
             continue
 
-        wick_reject, rejection_price, current_price = check_wick_rejection(df)
-        if not wick_reject:
-            continue
+        close_prices = [float(k['close']) for k in klines]
+        rsi_values = calculate_rsi(close_prices)
 
-        rsi_value = calculate_rsi(df)
-        if rsi_value is None or rsi_value < RSI_OVERBOUGHT:
-            continue
+        last_rsi = rsi_values[-1]
+        last_candle = klines[-2]  # last completed candle
 
-        message = (
-            f"🔥 SHORT Signal Alert!\n"
-            f"Symbol: {symbol}\n"
-            f"Rejection Price: {rejection_price}\n"
-            f"RSI: {round(rsi_value, 2)}\n"
-            f"Current Price: {current_price}\n"
-            f"Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
-        )
-        print(message)
-        send_telegram_message(message)
-        time.sleep(0.5)
+        signal, wick_size = check_short_signal(last_candle, last_rsi)
+        if signal:
+            message = (f"🔴 SHORT Signal Alert!\n"
+                       f"Symbol: {symbol}\n"
+                       f"RSI: {last_rsi:.2f}\n"
+                       f"Upper Wick: {wick_size:.2f}%\n"
+                       f"Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}")
+            send_telegram_message(message)
 
-if __name__ == "__main__":
-    while True:
-        scan_market()
-        print("Waiting 30 sec before next scan...")
-        time.sleep(30)
+# Run the scanner loop every 5 mins
+while True:
+    run_scanner()
+    time.sleep(300)
