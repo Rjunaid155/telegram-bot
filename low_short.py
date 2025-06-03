@@ -93,7 +93,7 @@ def scan_market():
             continue
 
         message = (
-            f" SHORT Signal Alert!\n"
+            f"🔥 SHORT Signal Alert!\n"
             f"Symbol: {symbol}\n"
             f"Rejection Price: {rejection_price}\n"
             f"RSI: {round(rsi_value, 2)}\n"
